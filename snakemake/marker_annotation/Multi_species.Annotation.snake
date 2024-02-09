@@ -1,0 +1,243 @@
+import pandas as pd
+import glob
+import os
+from itertools import product
+
+
+##### load config and sample sheets #####
+configfile: "Annot_config.yaml"
+
+##############################################
+##############################################
+#######Config file looks like this:######### 
+
+#Load Samples from the CSV file - index the important ones
+
+samples = pd.read_csv(config["samples_file"], sep=' ').set_index(["species", "tissue"], drop=False)
+#samples.index = samples.index.set_levels([i.astype(str) for i in samples.index.levels])  # enforce str in index
+
+
+
+pull_file = samples[["species","meta"]] 
+just_species = list(pull_file["species"])
+just_files = list(pull_file["meta"])
+
+
+def read_meta_data(file_name):
+    file_list = pd.read_csv(file_name, sep = "\t")
+    grab_louvain_clusters = set(list(file_list["LouvainClusters"]))
+    #This naming convenction is based on the de_novo_ID_markers script
+    #Instead of using raw number it generates a string for safecty
+    fixed_list = ["LouvainC_" + str(i) for i in grab_louvain_clusters]
+    return(fixed_list)
+
+
+#Generate all possible outputs for de-novo louvainn clustering
+final_meta_louvains =  []
+for sp, mt in zip(just_species, just_files):
+    meta_louvain_clusters = read_meta_data(mt)
+    final_meta_louvains.append(meta_louvain_clusters)
+
+samples["clusters"] = final_meta_louvains
+
+samples["clusters"] = final_meta_louvains
+generate_final_matrix = samples[["species", "tissue","clusters"]]
+exploded_matrix = generate_final_matrix.explode("clusters")
+
+
+
+
+wildcard_constraints:
+    species = '|'.join([x for x in samples["species"]]),
+    tissue = '|'.join([x for x in samples["tissue"]])
+
+
+knn_vals = [10,25]
+step_n = range(1,3,1)
+
+pdf_knn_val = [10,25]
+pdf_step_val = [1,2]
+
+rule all:
+    input:
+        expand("{unit.species}/acc_metrics_{unit.tissue}/{unit.species}.gene_body_acc_{unit.tissue}.counts.txt",
+            unit=samples[["species", "tissue"]].itertuples()),
+        #expand("{unit.species}/acc_metrics_{unit.tissue}/{unit.species}.normalized_gene_acc_scores.{unit.tissue}.GBaccessibility.sparse",
+        #    unit=samples[["species", "tissue"]].itertuples()),
+        #expand("{unit.species}/annotate/gene_body/{unit.species}_tis_{unit.tissue}_step_{step_number}_knn_{knn}.countsActivity.sparse",
+        #    unit=samples[["species", "tissue"]].itertuples(), knn = knn_vals, step_number = step_n),
+
+        expand("{unit.species}/annotate/{unit.tissue}_step_{step_number}/{unit.species}_tis_{unit.tissue}_step_{step_number}_knn_{knn}.countsActivity.sparse",
+            unit=samples[["species", "tissue"]].itertuples(), knn = knn_vals, step_number = step_n),
+        #expand("{unit.species}/annotate/{unit.species}.tis_{unit.tissue}.cluster.DA_genes.merged.bed",
+        #    unit=samples[["species", "tissue"]].itertuples()),
+
+        expand("{unit.species}/annotate/{unit.tissue}_step_{step_number}/{unit.species}_tis_{unit.tissue}_step_{step_number}_knn_{knn}.pdf",
+                unit=samples[["species", "tissue"]].itertuples(), knn = knn_vals, step_number = step_n),
+
+        expand("{output_location}/{unit.species}_tis_{unit.tissue}_step_{step_number}_knn_{knn}.impute.known.Markers.png", 
+                output_location = config["output_location"], 
+                unit=samples[["species", "tissue"]].itertuples(), knn = knn_vals, step_number = step_n),
+        expand("{output_location}/w_legend/{unit.species}_tis_{unit.tissue}_step_{step_number}_knn_{knn}.pdf", 
+                output_location = config["output_location"], 
+                unit=samples[["species", "tissue"]].itertuples(), knn = pdf_knn_val, step_number = pdf_step_val)
+
+rule calculate_gene_body_accessability_counts:
+    input:
+        tn5_bed_file = lambda wildcards: samples.loc[(wildcards.species, wildcards.tissue), 'bed_file'],
+        annot_bed = lambda wildcards: config["annotations"][wildcards.species]
+    params:
+        base = "{species}/acc_metrics_{tissue}/{species}.gene_body_acc_{tissue}.base"
+    output:
+        "{species}/acc_metrics_{tissue}/{species}.gene_body_acc_{tissue}.counts.txt"
+    message:"""Generating Gene Body Accessability Non-Normalized"""
+    threads:
+        10
+    conda:
+        "envs/pydev_2021-07-06.yaml"
+    shell:"""
+    python scripts/gene_body_acc.py -anno {input.annot_bed} -tn5 {input.tn5_bed_file} -base {params.base} -p {threads} -type gene -o {output}
+    """
+
+
+### No longer in use as of 2022-06-28
+#rule normalize_gene_body_acc_count:
+#    input:
+#        non_normalized_acc = rules.calculate_gene_body_accessability_counts.output,
+#        meta = lambda wildcards: samples.loc[(wildcards.species, wildcards.tissue), 'meta'],
+#        annot_bed = lambda wildcards: config["annotations"][wildcards.species],
+#    params:
+#        pre = "{species}/acc_metrics_{tissue}/{species}.normalized_gene_acc_scores.{tissue}"
+#    output:
+#        GB_acc = "{species}/acc_metrics_{tissue}/{species}.normalized_gene_acc_scores.{tissue}.GBaccessibility.sparse", 
+#        sct_acc = "{species}/acc_metrics_{tissue}/{species}.normalized_gene_acc_scores.{tissue}.sctGBAcounts.sparse"
+#
+#    conda:
+#        "envs/r_env.2021-07-06.yml"
+#    message:""" """
+#    shell:"""
+#    Rscript scripts/normGBA.R {input.non_normalized_acc} {input.meta} {input.annot_bed} {params.pre} F
+#    """
+
+
+#crown_root/annotate/gene_body/tis_crown_root_step_1_knn_23.countsActivity.sparse
+rule run_annotation_norm_gene_body_acc_only:
+    input:
+        meta = lambda wildcards: samples.loc[(wildcards.species, wildcards.tissue), 'meta'],
+        sparse = rules.calculate_gene_body_accessability_counts.output,
+        marker = lambda wildcards: samples.loc[(wildcards.species, wildcards.tissue), 'markers'],
+        PCAs = lambda wildcards: samples.loc[(wildcards.species, wildcards.tissue), 'PCAs']
+    threads: 6
+    params:
+        step_number = "{step_number}",
+        knn = "{knn}",
+        base_output_name = "{species}_tis_{tissue}_step_{step_number}_knn_{knn}",
+        base_output_dir = "{species}/annotate/{tissue}_step_{step_number}/",
+    output:
+        marker_viz_png = "{species}/annotate/{tissue}_step_{step_number}/{species}_tis_{tissue}_step_{step_number}_knn_{knn}.impute.known.Markers.png",
+        clustering_imputed_sparse = "{species}/annotate/{tissue}_step_{step_number}/{species}_tis_{tissue}_step_{step_number}_knn_{knn}.countsActivity.sparse",
+        rds_obj = "{species}/annotate/{tissue}_step_{step_number}/{species}_tis_{tissue}_step_{step_number}_knn_{knn}.out.rds"
+    conda:
+        "envs/r_env.2022-09-29.yml"
+    message:"""Running Annotation Gene Body Accessability No Cicero %s """
+    shell:"""
+    Rscript scripts/Step01_plot_marker_accessibility.PM_graphing.R  {input.meta} {input.sparse} \
+    {input.PCAs} {input.marker} {threads} Louvain_cluster_safe no \
+    {params.base_output_dir} scripts/Step01_functions.plot_marker_accessibility.PM_graphing.R \
+    {params.knn} {params.step_number} {params.base_output_name}
+    """
+
+
+rule generate_marker_image_w_legend_pdf:
+    input:
+        meta = lambda wildcards: samples.loc[(wildcards.species, wildcards.tissue), 'meta'],
+        rds = rules.run_annotation_norm_gene_body_acc_only.output.rds_obj,
+        marker = lambda wildcards: samples.loc[(wildcards.species, wildcards.tissue), 'markers']
+    params:
+        base_output = "{species}/annotate/{tissue}_step_{step_number}/{species}_tis_{tissue}_step_{step_number}_knn_{knn}"
+    output:
+        "{species}/annotate/{tissue}_step_{step_number}/{species}_tis_{tissue}_step_{step_number}_knn_{knn}.pdf"
+    conda:
+        "envs/r_env.2022-09-29.yml"
+    message: "Generating Large PDF file for marker viz"
+    threads:2
+    shell:""" 
+    R_LIBS_USER=/home/jpm73279/.conda/envs/R_final_install/lib/R/library
+    Rscript scripts/plot_markers.bare.Rscript {input.rds} {input.meta} {input.marker} {params.base_output}
+    """
+
+
+rule copy_output_imgs:
+    input:
+        png_img = rules.run_annotation_norm_gene_body_acc_only.output.marker_viz_png
+    params:
+        output_location = config["output_location"] 
+    output:
+        copied_output_viz = config["output_location"] + "/" + "{species}_tis_{tissue}_step_{step_number}_knn_{knn}.impute.known.Markers.png"
+    shell:"""
+    cp {input.png_img} {params.output_location}
+    """
+
+rule copy_pdf_imgs:
+    input:
+        png_img = rules.generate_marker_image_w_legend_pdf.output
+    params:
+        output_location = config["output_location"] + "/" + "w_legend"
+    output:
+        copied_output_viz = config["output_location"] + "/" + "w_legend"+ "/" + "{species}_tis_{tissue}_step_{step_number}_knn_{knn}.pdf"
+    shell:"""
+    cp {input.png_img} {params.output_location}
+    """
+
+
+
+
+#$"{species}/annotate/de_novo/{species}.tis_{tissue}.cluster.{cluster}.markers_de_novo.visualize.bed"
+checkpoint de_novo_ID_markers:
+    input:
+        sparse_matrix = rules.calculate_gene_body_accessability_counts.output,
+        marker = lambda wildcards: samples.loc[(wildcards.species, wildcards.tissue), 'markers'],
+        meta = lambda wildcards: samples.loc[(wildcards.species, wildcards.tissue), 'meta'],
+        annot_bed = lambda wildcards: config["annotations"][wildcards.species]
+    params:
+        base_name = "{species}/annotate/de_novo_{tissue}/{species}.tis_{tissue}.cluster",
+        raw_counts_tab = "{species}/acc_metrics_{tissue}/{species}.gene_body_acc_{tissue}.counts.tab.txt",
+        species_name = "{species}"
+    output:
+        dir = directory("{species}/annotate/de_novo_{tissue}")
+    message: "De Novo Finding Markers"
+    threads:1
+    conda:
+        "envs/r_env.2021-07-06.yml"
+    shell:""" 
+    
+    mkdir -p {output.dir}
+    sed 's/ /\t/g' {input.sparse_matrix} > {params.raw_counts_tab}
+
+    Rscript scripts/de_novo_marker_ID.R {input.meta} {params.raw_counts_tab} {input.marker} {input.annot_bed} {params.species_name} {params.base_name}
+    """
+
+
+def chkpt_gather(wildcards):
+
+    checkpoint_output = checkpoints.de_novo_ID_markers.get(**wildcards).output.dir
+    LC = glob_wildcards(os.path.join(checkpoint_output,
+        "{species}.tis_{tissue}.cluster.{LC}.markers_de_novo.visualize.bed")).LC
+    expanded_clusters = expand("{species}/annotate/de_novo_{tissue}/{species}.tis_{tissue}.cluster.{LC_number}.markers_de_novo.visualize.bed",
+        species = wildcards.species,
+        tissue = wildcards.tissue,
+        LC_number = LC)
+    return(expanded_clusters)
+
+
+rule gather_de_novo_markers:
+    input:
+        chkpt_gather
+    output:
+        "{species}/annotate/{species}.tis_{tissue}.cluster.DA_genes.merged.bed"
+    message: "Merging all DA Markers found"
+    threads:1
+    shell:""" 
+    python scripts/merge.de_novo_markers.py -DA {input} -n 10 -o {output}
+    """
+

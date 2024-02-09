@@ -1,0 +1,232 @@
+import pandas as pd
+import glob
+import os
+from itertools import product
+
+
+##### load config and sample sheets #####
+configfile: "multi.species_align.yaml"
+
+
+##### Read samples #####
+samples = pd.read_table(config["sciATAC_samples"],  delimiter=" ", dtype=str).set_index(["species", "rep", "pool"], drop=False)
+#samples['rep'] = samples.rep.astype(str)
+
+genome_keys = config["species"].keys()
+x="100G"
+
+
+#print(expand("{unit.species}.snake/03.bed_files_merged/{unit.species}.filter.mpq_{score}.rmdup.unique.sorted.bed",
+#        unit=samples[["species", "rep", "pool"]].itertuples(), score = 10))
+
+
+rule all:
+    input:
+        expand("00.data/reference/{genome_name}.done", genome_name = genome_keys),
+        #expand("{unit.species}.snake/01.aligned_reads/{unit.species}.rep_{unit.rep}.pool_{unit.pool}.filter.mpq_{score}.bam",
+        #        unit=samples[["species", "rep", "pool"]].itertuples(), score = 10),
+        expand("{unit.species}.snake/03.bed_files_merged/{unit.species}.filter.mpq_{score}.rmdup.unique.sorted.bed",
+                unit=samples[["species", "rep", "pool"]].itertuples(), score = 10)
+
+
+
+rule generate_genome_index:
+    input:
+        lambda wildcards: config["species"][wildcards.species]
+    output:
+        "00.data/reference/{species}.done"
+    message: "Generating Genome Index"
+    resources:
+        mem_mb=x,
+        disk_mb=110000,
+        runtime = 900,
+        partition="batch"
+    threads: 5
+    conda:
+        "envs/bwa_samtools_2022-10-19.yaml"
+    shell:""" 
+    bwa index {input}
+    touch {output}
+    """
+
+rule align_reads:
+    input:
+        ref_genome = lambda wildcards: config["species"][wildcards.species],
+        index_genome = rules.generate_genome_index.output,
+        R1_reads = lambda wildcards: samples.loc[(wildcards.species, wildcards.rep, wildcards.pool), 'R1'],
+        R2_reads = lambda wildcards: samples.loc[(wildcards.species, wildcards.rep, wildcards.pool), 'R2']
+    output:
+        bwa_aligned_reads = "{species}.snake/01.aligned_reads/{species}.rep_{rep}.pool_{pool}.raw.bam"
+    message: "Aligning reads BigBoi ;)"
+    threads:20
+    conda:
+        "envs/bwa_samtools_2022-10-19.yaml"
+    resources:
+        mem_mb=x,
+        disk_mb=110000,
+        runtime = 900,
+        partition="batch"
+    shell:""" 
+    bwa mem -M -t {threads} {input.ref_genome} {input.R1_reads} {input.R2_reads} > {output}
+    """
+
+rule filter_sam_file:
+    input:
+        rules.align_reads.output.bwa_aligned_reads
+    params:
+        score = lambda wildcards: config["mapping_quality"][wildcards.species]
+    output:
+        bwa_aligned_reads_filtered = "{species}.snake/01.aligned_reads/{species}.rep_{rep}.pool_{pool}.filter.mpq_{score}.bam"
+    message: "Filtering Sam files based off of alignment score big boi ;)"
+    threads:2
+    conda:
+        "envs/bwa_samtools_2022-10-19.yaml"
+    resources:
+        mem_mb=x,
+        disk_mb=110000,
+        runtime = 900,
+        partition="batch"
+    shell:""" 
+    samtools view -hbSq {params.score} {input} | samtools sort - > {output.bwa_aligned_reads_filtered}
+    """
+
+
+rule modify_barcode:
+    input:
+        rules.filter_sam_file.output.bwa_aligned_reads_filtered
+    output:
+        bam_mod_bc = "{species}.snake/01.aligned_reads/{species}.rep_{rep}.pool_{pool}.filter.mpq_{score}.modified_bc.bam"
+    message: "Modifying barcode for downstream"
+    threads:1
+    conda:
+        "envs/perl_2022-10-19.yaml"
+    resources:
+        mem_mb=x,
+        disk_mb=110000,
+        runtime = 900,
+        partition="batch"
+    shell:""" 
+    perl util_scripts/modify_BC_flag.pl {input} | samtools view -bSh - > {output}
+    """
+
+rule picard_remove_duplicates:
+    input:
+        rules.modify_barcode.output.bam_mod_bc
+    params:
+        "{species}.snake/01.aligned_reads/{species}.rep_{rep}.pool_{pool}.filter.mpq_{score}.metrics"
+    output:
+        "{species}.snake/01.aligned_reads/{species}.rep_{rep}.pool_{pool}.filter.mpq_{score}.rmdup.bam"
+    message: "Running picard"
+    threads:10
+    resources:
+        mem_mb=x,
+        disk_mb=110000,
+        runtime = 900,
+        partition="batch"
+    conda:
+        "envs/picard_conda.yml"
+    shell:""" 
+    picard MarkDuplicates \
+    MAX_FILE_HANDLES_FOR_READ_ENDS_MAP=1000 \
+    REMOVE_DUPLICATES=true \
+    METRICS_FILE={params} \
+    I={input} \
+    O={output} \
+    BARCODE_TAG=BC \
+    ASSUME_SORT_ORDER=coordinate
+    """
+
+
+rule fix_bc:
+    input:
+        rules.picard_remove_duplicates.output
+    params:
+        replicate_name = "{species}.{pool}.{rep}"
+    output:
+        "{species}.snake/01.aligned_reads/{species}.rep_{rep}.pool_{pool}.filter.mpq_{score}.modified_bc.rmdup.bam"
+    message: "Fix BC"
+    threads:1
+    conda:
+        "envs/perl_2022-10-19.yaml"
+    resources:
+        mem_mb=x,
+        disk_mb=110000,
+        runtime = 900,
+        partition="batch"
+    shell:""" 
+    perl util_scripts/fixBC.pl {input} {params.replicate_name} | samtools view -bhS - > {output} 
+    """
+
+
+rule make_tn_bed:
+    input:
+       rules.fix_bc.output 
+    output:
+        "{species}.snake/02.bed_files/{species}.rep_{rep}.pool_{pool}.filter.mpq_{score}.modified_bc.rmdup.bed"
+    message: "Make tn5 bed"
+    threads:1
+    conda:
+        "envs/pydev_2022-10-19.yaml"
+    resources:
+        mem_mb=x,
+        disk_mb=110000,
+        runtime = 900,
+        partition="batch"
+    shell:""" 
+    samtools view {input} | python util_scripts/makeTn5bed.py -sam - | sort -k1,1 -k2,2n - > {output}
+    """
+
+rule take_unique:
+    input:
+        rules.make_tn_bed.output
+    output:
+        "{species}.snake/02.bed_files/{species}.rep_{rep}.pool_{pool}.filter.mpq_{score}.modified_bc.rmdup.unique.bed"
+    message: "Taking only Unique Tn5 Sites"
+    threads:2
+    conda:
+        "envs/bwa_samtools_2022-10-19.yaml"
+    resources:
+        mem_mb=x,
+        disk_mb=110000,
+        runtime = 900,
+        partition="batch"
+    shell:"""
+    uniq {input} > {output}
+    """
+
+
+rule merge_plates:
+    input:
+        lambda wildcards: expand("{{species}}.snake/02.bed_files/{{species}}.rep_{{rep}}.pool_{pool}.filter.mpq_{{score}}.modified_bc.rmdup.unique.bed",
+                pool = samples.loc[(wildcards.species, wildcards.rep), 'pool'])
+    output:
+        "{species}.snake/03.bed_files_merged/{species}.rep_{rep}.filter.mpq_{score}.rmdup.unique.sorted.bed"
+    message: "Merging Plates"
+    threads:5
+    resources:
+        mem_mb=x,
+        disk_mb=110000,
+        runtime = 900,
+        partition="batch"
+    shell:""" 
+    cat {input} | sort -T tmp --parallel={threads} -k 1,1 -k2,2n - > {output}
+    """
+
+
+rule merge_replicates:
+    input:
+        lambda wildcards: expand("{{species}}.snake/03.bed_files_merged/{{species}}.rep_{rep}.filter.mpq_{{score}}.rmdup.unique.sorted.bed",
+            rep = samples.loc[(wildcards.species), 'rep'].unique())
+    output:
+        "{species}.snake/03.bed_files_merged/{species}.filter.mpq_{score}.rmdup.unique.sorted.bed"
+    message: "Merging Replicates"
+    threads:4
+    resources:
+        mem_mb=x,
+        disk_mb=110000,
+        runtime = 2500,
+        partition="batch"
+    shell:"""
+    cat {input} | sort -T tmp --parallel={threads} -k 1,1 -k2,2n - > {output}
+    """
+

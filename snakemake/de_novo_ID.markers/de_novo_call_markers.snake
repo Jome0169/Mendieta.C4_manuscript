@@ -1,0 +1,175 @@
+import pandas as pd
+import glob
+import os
+from itertools import product
+
+
+##### load config and sample sheets #####
+configfile: "de_novo_calls.yaml"
+
+##############################################
+##############################################
+#######Config file looks like this:######### 
+
+output_base = lambda wildcards: config["species"][wildcards.species]['output_base']
+
+species_vals = []
+output_base_vals = []
+for species, configs in config["species"].items():
+    if "output_base" in configs:
+        species_vals.append(species)
+        output_base_vals.append(configs["output_base"])
+    else:
+        pass
+
+
+x="100G"
+rule all:
+    input:
+        expand("02.de_novo_markers/{species}/{output_base}.all_combined_cell_types_upregulated.bed",
+               zip,
+               species = species_vals,
+               output_base = output_base_vals)
+
+
+rule calc_gene_acc:
+    input:
+        genes = lambda wildcards:
+            config["species"][wildcards.species]["reference_bed"],
+        bed_file = lambda wildcards: config["species"][wildcards.species]["bed_tn5"]
+    params:
+        base = "01.gene_accessability/{species}.gene_accessability"
+    resources:
+        #mem_mb=x,
+        disk_mb=110000,
+        runtime=2000,
+        partition="batch"
+    output:
+        "01.gene_accessability/{species}.gene_accessability.txt"
+    message: "Alinging reads for Pools"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:15
+    shell:"""
+    python scripts/gene_body_acc.py -anno {input.genes} -tn5 \
+    {input.bed_file} -base {params.base} -p {threads} -type gene -o {output}
+    """
+
+
+rule filter_gene_acc:
+    input:
+        meta = lambda wildcards: config["species"][wildcards.species]["meta"],
+        acc_file = rules.calc_gene_acc.output
+    params:
+        base = "01.gene_accessability/{species}.cellIDs.passing"
+    resources:
+        #mem_mb=x,
+        disk_mb=110000,
+        runtime=2000,
+        partition="batch"
+    output:
+        "01.gene_accessability/{species}.gene_accessability.filtered.txt"
+    message: "Alinging reads for Pools"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:15
+    shell:"""
+    awk '{{print $1}}' {input.meta} > {params.base}
+    grep -F -f {params.base} {input.acc_file} > {output}
+    """
+
+
+rule generate_de_novo_markers:
+    input:
+        meta_data = lambda wildcards:
+            config["species"][wildcards.species]["meta"],
+        sparse_gene_acc = rules.filter_gene_acc.output,
+        markers =  lambda wildcards:
+            config["species"][wildcards.species]["markers"],
+        reference_bed =  lambda wildcards:
+            config["species"][wildcards.species]["reference_bed"]
+    params:
+        species = "{species}",
+        slot_id =  lambda wildcards:
+            config["species"][wildcards.species]["slot_id"],
+        output_base = lambda wildcards:
+            config["species"][wildcards.species]["output_base"],
+        output_dir ="02.de_novo_markers/{species}/"
+    output:
+        "02.de_novo_markers/{species}/{output_base}.all_combined_cell_types_upregulated.bed"
+    message: "Identifying DeNovo Markers for Species"
+    resources:
+        mem_mb=x,
+        disk_mb=110000,
+        runtime = 900,
+        partition="schmitz_p"
+    threads: 5
+    conda:
+        "envs/R_env.yaml"
+    shell:""" 
+    Rscript scripts/de_novo_marker_ID.final.r {input.meta_data} \
+    {input.sparse_gene_acc} {input.markers} {input.reference_bed} \
+    {params.slot_id} {params.species} {params.output_base} {params.output_dir}
+    """
+
+
+#rule map_reads_to_species:
+#    input:
+#        species_fa_file =  lambda wildcards: config["NAM_genomes"][wildcards.genome],
+#        species_index = rules.generate_genome_index.output,
+#        fwd_pool = lambda wildcards: samples.loc[(wildcards.pool), 'fwd'],
+#        rev_pool = lambda wildcards: samples.loc[(wildcards.pool), 'rev'],
+#        barcode_pool = lambda wildcards: samples.loc[(wildcards.pool), 'bc']
+#    params:
+#        white_list = config["white_list"]
+#    resources:
+#        mem_mb=x,
+#        disk_mb=110000,
+#        runtime=360,
+#        partition="batch"
+#    output:
+#        temp("01.pool_alignment/{species}_alignment/{pool}.aligned.sam")
+#    message: "Alinging reads for Pools"
+#    threads:30
+#    shell:""" 
+#    chromap -l 2000 -q 1 --remove-pcr-duplicates-at-cell-level --low-mem --trim-adapters -x {input.species_index} -r {input.genome_fa_file} -1 {input.fwd_pool} -2 {input.rev_pool} -o {output} -b {input.barcode_pool} --SAM --barcode-whitelist {params.white_list} --bc-error-threshold 2 -t {threads}
+#    """
+#
+#rule sort_aligned_bam:
+#    input:
+#        rules.map_reads_to_species.output
+#    params:
+#    resources:
+#        mem_mb=x,
+#        disk_mb=110000,
+#        runtime=240,
+#        partition="batch"
+#    output:
+#        "01.pool_alignment/{species}_alignment/{pool}.aligned.sort.bam"
+#    message: "Rule"
+#    threads:30
+#    conda:
+#        "envs/samtools.yaml"
+#    shell:""" 
+#    samtools sort -n {input} > {output}
+#    """
+#
+#
+#rule fixmates_samtools:
+#    input:
+#        rules.sort_aligned_bam.output
+#    params:
+#    resources:
+#        mem_mb=x,
+#        disk_mb=110000,
+#        runtime=240,
+#        partition="batch"
+#    output:
+#        temp("02.pool_alignment_processing/{species}_alignment/{pool}.aligned.fm.sort.bam")
+#    message: "Rule"
+#    threads:30
+#    conda:
+#        "envs/samtools.yaml"
+#    shell:""" 
+#    samtools fixmate -@ {threads} {input} {output}
+#    """

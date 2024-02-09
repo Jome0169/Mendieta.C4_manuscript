@@ -1,0 +1,6 @@
+reference_fa: 00.data/annotation/Zm-B73-REFERENCE-NAM-5.0.fa
+bed_base: Zm.v5_mesophyll_cell_sat
+sample_bed: 00.data/Zm.all_mergeed_repds.unique.mpq10.tn5.sorted.bed
+genome_size: 00.data/annotation/Zm-B73-REFERENCE-NAM-5.0.chrom.size
+annotation_bed: 00.data/annotation/Zm-B73-REFERENCE-NAM_Zm00001eb.1.genes.bed
+meta: 00.data/Zm_leaf.V2_annotation.mesophyll_ncell_4569.final.txt

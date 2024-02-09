@@ -1,0 +1,67 @@
+import pandas as pd
+import glob
+import os
+from itertools import product
+
+
+##### load config and sample sheets #####
+configfile: "ID_markers_config.yaml"
+sample_comparisons = pd.read_csv(config["sample_comparisons"], sep=' ').set_index(["query", "reference"], drop=False)
+print(sample_comparisons)
+
+grab_tissues = config["tissues"].split(',')
+
+
+
+rule all:
+    input:
+        expand(
+        "01.ortho_markers/{combos.query}.orthos_from.{combos.reference}.markers.bed",
+            combos = sample_comparisons[["query", "reference"]].itertuples()),
+        expand("02.visualization_annotation/{combos.query}.orthos_from.{combos.reference}.markers.tis_{tissue}.visualize.txt",
+            combos = sample_comparisons[["query", "reference"]].itertuples(),
+            tissue = grab_tissues)
+
+
+rule find_marker_reference:
+    input:
+        query_tsv = lambda wildcards: config["orthofinder_query_vs_ref"][wildcards.species][wildcards.reference_species],
+        ref_markers =  lambda wildcards: config["marker_location"] + "/"  + sample_comparisons.loc[(wildcards.species, wildcards.reference_species), 'reference_markers']
+    params:
+        base_name = "01.ortho_markers/{species}.orthos_from.{reference_species}",
+        query_len =  lambda wildcards: config["protein_descriptor_len"][wildcards.species],
+        ref_len =  lambda wildcards: config["protein_descriptor_len"][wildcards.reference_species],
+        query_bed =  lambda wildcards: config["bed_files"][wildcards.species]
+    output:
+        query_ref_markers = "01.ortho_markers/{species}.orthos_from.{reference_species}.markers.bed"
+    message:"""Generating Markers for {input.query_tsv}"""
+    shell:"""
+    python scripts/find_markers.orthofinder.py \
+    -marker_bed {input.ref_markers}  \
+    -ortho_query {input.query_tsv}  \
+    -query_bed {params.query_bed} -len_sub_query {params.query_len} \
+    -len_sub_df {params.ref_len} -o {params.base_name}
+    """
+
+#rule grab_correct_tissue_markers:
+#    input:
+#        marker_bed = rules.find_marker_reference.output.query_ref_markers
+#    params:
+#        tissue_name = "{tissue}"
+#    output:
+#        grab_tissue = "01.ortho_markers/{species}.orthos_from.{reference_species}.markers.tis_{tissue}.txt"
+#    shell:"""                                                                 
+#    grep {params.tissue_name} {input.marker_bed} > {output.grab_tissue}
+#    """
+
+
+rule convert_markers_for_visualization:
+    input:
+        marker_bed = rules.find_marker_reference.output.query_ref_markers
+    output:
+        visualizable = "02.visualization_annotation/{species}.orthos_from.{reference_species}.markers.tis_{tissue}.visualize.txt"
+    shell:"""
+    python scripts/process_markers.visualize.py -hd -i {input.marker_bed} -o {output.visualizable}
+    """
+
+

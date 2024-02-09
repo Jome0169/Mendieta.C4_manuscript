@@ -1,0 +1,14 @@
+samples_file: samples.annot.2023-04-18.txt
+output_location: "/home/jpm73279/data_copy_over/comparative_single_cell_imgs/visualize_markers"
+annotations:
+    sorghum_bicolor:
+        00.data/references/annotation/Sbicolorv5.1.gene.bed
+    urochloa_fusca:
+        00.data/references/annotation/Ufusca_669_v1.1.gene_only.simplified.bed
+    panicum_millet:
+        00.data/references/annotation/Pmiliaceum.genes.renamed.short.bed
+    zea_mays:
+        00.data/references/annotation/Zm-B73-REFERENCE-NAM_Zm00001eb.1.genes.bed
+    oryza_sativa:
+      00.data/references/annotation/Osativa_323_v7.0.gene_only.renamed.bed
+

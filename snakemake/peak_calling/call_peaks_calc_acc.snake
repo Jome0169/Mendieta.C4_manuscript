@@ -1,0 +1,1136 @@
+import pandas as pd
+import os
+from itertools import product
+
+
+##### load config and sample sheets #####
+configfile: "Peak_calling_config.yaml"
+samples = pd.read_table(config["file_lists"], delimiter=" ").set_index("species", drop=False)
+
+
+def df_to_dict(df, key_column='species', value_column='meta_data'):
+    # Initialize empty dictionary
+    result_dict = {}
+    # Check if columns exist in DataFrame
+    if key_column in df.columns and value_column in df.columns:
+        # Iterate over DataFrame rows
+        for index, row in df.iterrows():
+            result_dict[row[key_column]] = row[value_column]
+    else:
+        print(f"Columns '{key_column}' and/or '{value_column}' do not exist in DataFrame.")
+    return result_dict
+
+def generate_unique_values_dict(file_dict, column_dict):
+    # Initialize empty dictionary to store results
+    result_dict = {}
+    # Iterate over the keys (species) in file_dict and column_dict
+    for species in file_dict.keys():
+        # Read the file into a DataFrame
+        df = pd.read_csv(file_dict[species], sep='\t')
+        # Check if the column exists in DataFrame
+        if column_dict[species] in df.columns:
+            # Get unique values from the column and store in result_dict
+            result_dict[species] = df[column_dict[species]].unique().tolist()
+        else:
+            print(f"Column '{column_dict[species]}' does not exist in DataFrame for species '{species}'.")
+    return result_dict
+
+## The above two functions are there to allow me to match species to the cell
+#types we have for them. This is important for downstream analysis focusing on
+#MEME and motif anlaysis
+species_column_val_dict = {k: v['column_val'] for k, v in config['species'].items()}
+species_meta_dict = df_to_dict(samples, key_column = "species", value_column = "meta_data")
+species_cell_types_dict = generate_unique_values_dict(species_meta_dict, species_column_val_dict)
+cell_type_species_pairs = [(species, cell_type) for species, cell_types in species_cell_types_dict.items() for cell_type in cell_types]
+
+print(cell_type_species_pairs)
+
+unique_species = config['species'].keys()
+
+small=1250
+x=100000
+large=500000
+
+rule all:
+    input:
+        expand("01.called_peaks/{species}_peak_calls/{species}.peaks.500bp_peaks.bed",
+                species = unique_species),
+        expand("02.peak_accessability/{species}.peaks_accessability.txt",
+                species = unique_species),
+        expand("03.peak_assignment/{species}_dir/{species}_acr_classification.no_exons.all_ACRs.classified.bed",
+                species = unique_species),
+        expand("04.peak_annotation/{species}_dir/{species}_acr.annotated.bed",
+                species = unique_species),
+        expand("04.peak_annotation/{species}_dir/{species}.ACR_CNS.intersection.bed",
+               species = unique_species),
+        expand("04.peak_annotation/{species}_dir/{species}.CNS_ACRs.intersection.bed",
+               species = unique_species),
+        expand("04.peak_annotation/{species}_dir/{species}_acr.closest_genes.sorted.bed",
+               species = unique_species),
+        expand("05.pull_sequence_under_peaks/{species}_dir/fasta/{species}.cts_{cell_type}.fa",
+            zip,
+            species=[pair[0] for pair in cell_type_species_pairs],
+            cell_type=[pair[1] for pair in cell_type_species_pairs]),
+        #expand("06.motif_enrichment/{species}_dir/{cell_type}/sea/sea.html",
+        #    zip,
+        #    species=[pair[0] for pair in cell_type_species_pairs],
+        #    cell_type=[pair[1] for pair in cell_type_species_pairs]),
+        expand("06.motif_enrichment/{species}_dir/{cell_type}/xstreme/xstreme.txt",
+            zip,
+            species=[pair[0] for pair in cell_type_species_pairs],
+            cell_type=[pair[1] for pair in cell_type_species_pairs]),
+        expand("06.motif_enrichment/{species}_dir/all_acrs/{species}_fimo_output/fimo.tsv",
+               species = unique_species),
+        expand("06.motif_enrichment/{species}_dir/all_acrs/{species}_fimo_output_pres/fimo.tsv",
+            species = unique_species),
+        expand("06.motif_enrichment/{species}_dir/all_acrs/{species}_fimo_output_all_tfs/fimo.tsv",
+               species = unique_species),
+        expand("06.motif_enrichment/{species}_dir/all_acrs/{species}_fimo_output_de_novo/fimo.tsv",
+               species = unique_species),
+        expand("06.motif_enrichment/{species}_dir/control_bed/{species}.done",
+               species = unique_species),
+        expand("07.chrom_var/{species}.peaks_by_intersections.rds",
+               species = unique_species),
+        expand("08.C4_gene_relationship/updated_acrs/{species}.updated_acrs.{cell_type}.bed",
+            species = unique_species,
+            cell_type = ["mesophyll", "bundle_sheath"]),
+        expand("08.C4_gene_relationship/intersections/{species}.extended_c4_genes.{cell_type}.intersection.bed",
+            species = unique_species,
+            cell_type = ["mesophyll", "bundle_sheath"]),
+        expand("08.C4_gene_relationship/{species}.extended_c4_genes.acrs.{cell_type}/xstreme/xstreme.txt",
+            species = unique_species,
+            cell_type = ["mesophyll", "bundle_sheath"]),
+        expand("08.C4_gene_relationship/intersections/{species}.extended_c4_genes.broad_intersection.bed",
+            species = unique_species),
+         expand("09.updated_ms_bs_acr_calling/{species}.extended_c4_genes.acrs.{cell_type}/xstreme/xstreme.txt",
+            species = unique_species,
+            cell_type = ["mesophyll", "bundle_sheath"]),
+        expand("10.C4_gene_relationship_only_single_gene/intersections/{species}.extended_c4_genes.{cell_type}.intersection.bed",
+            species = unique_species,
+            cell_type = ["mesophyll", "bundle_sheath"]),
+        expand("10.C4_gene_relationship_only_single_gene/intersections/{species}.extended_c4_genes.broad_intersection.bed",
+            species = unique_species),
+        expand("10.C4_gene_relationship_only_single_gene/all_acr_intersections/{species}.extended_c4_genes.acr_intersection.all.bed",
+            species = unique_species),
+        expand("10.C4_gene_relationship_only_single_gene/motif_analysis/{species}_fimo_output_de_novo/fimo.tsv", 
+            species = unique_species),
+        expand("11.contrasting_bs_ms/{species}_fimo_output_bs_vs_ms/xstreme/xstreme.txt",
+            species = unique_species)
+
+
+rule call_ct_peaks:
+    input:
+        bed_file = lambda wildcards: samples.loc[(wildcards.species), 'bed'],
+        meta_file = lambda wildcards: samples.loc[(wildcards.species), 'meta_data'],
+        fai_file = lambda wildcards: samples.loc[(wildcards.species), 'fai']
+    params:
+        output_dir = "01.called_peaks/{species}_peak_calls",
+        base_name = "{species}.peaks",
+        fdr_val = lambda wildcards: config["species"][wildcards.species]["fdr_val"],
+        col_val =   lambda wildcards: config["species"][wildcards.species]["column_val"],
+        rep_col =   lambda wildcards: config["species"][wildcards.species]["replicate_col"],
+        gsize =   lambda wildcards: config["species"][wildcards.species]["gsize"]
+    output:
+        "01.called_peaks/{species}_peak_calls/{species}.peaks.500bp_peaks.bed"
+    message: "Generating Genome Index"
+    resources:
+        mem_mb=large,
+        disk_mb=210000,
+        runtime = 1000,
+        partition="batch"
+    threads: 10
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    shell:""" 
+    python scripts/call_scACRs.py -bed {input.bed_file} \
+    -meta {input.meta_file} \
+    -col {params.col_val} \
+    -fai {input.fai_file} -bw yes \
+    -gsize {params.gsize} \
+    -base {params.base_name} -outdir {params.output_dir} -cores \
+    {threads} -rep {params.rep_col} -fdr {params.fdr_val}
+    """
+
+rule filter_peaks_no_exons:
+    input:
+        peak_file = rules.call_ct_peaks.output,
+        bed_gene_annot_file = lambda wildcards: config["species"][wildcards.species]['bed_exon_anno']
+    resources:
+        #mem_mb=x,
+        disk_mb=110000,
+        runtime=120,
+        partition="batch"
+    output:
+        "01.called_peaks/{species}_peak_calls/{species}.peaks.500bp_peaks.no_exons.bed"
+    message: "Removing ACRs overlapping Exons"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    bedtools intersect -a {input.peak_file} -b {input.bed_gene_annot_file} -f .8 -v > {output}
+    """
+
+rule calc_peak_gene_acc:
+    input:
+        peak_file = rules.filter_peaks_no_exons.output,
+        bed_file = lambda wildcards: samples.loc[(wildcards.species), 'bed'],
+    params:
+        base = "02.peak_accessability/{species}.peaks_accessability"
+    resources:
+        #mem_mb=x,
+        disk_mb=110000,
+        runtime=2000,
+        partition="batch"
+    output:
+         "02.peak_accessability/{species}.peaks_accessability.txt"
+    message: "Alinging reads for Pools"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:15
+    shell:""" 
+    python scripts/gene_body_acc.py -anno {input.peak_file} -tn5 {input.bed_file} -base {params.base} -p {threads} -type acr -o {output}
+    """
+
+rule filter_peak_acc:
+    input:
+        meta = lambda wildcards: samples.loc[(wildcards.species), 'meta_data'],
+        acc_file = rules.calc_peak_gene_acc.output,
+    params:
+        base = "02.peak_accessability/{species}.cellIDs.passing"
+    resources:
+        #mem_mb=x,
+        disk_mb=110000,
+        runtime=2000,
+        partition="batch"
+    output:
+         "02.peak_accessability/{species}.peaks_accessability.filtered.txt"
+    message: "Alinging reads for Pools"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:15
+    shell:""" 
+    awk '{{print $1}}' {input.meta} > {params.base}
+    grep -F -f {params.base} {input.acc_file} > {output}
+    """
+
+
+rule call_cts_acrs:
+   input:
+       acr_acc = rules.filter_peak_acc.output,
+       peaks_no_exons = rules.filter_peaks_no_exons.output,
+       meta = lambda wildcards: samples.loc[(wildcards.species), 'meta_data']
+   params:
+        col_val =   lambda wildcards: config["species"][wildcards.species]["column_val"],
+        base_output = "03.peak_assignment/{species}_dir/{species}_acr_classification.no_exons",
+        pval = lambda wildcards:
+            config['species'][wildcards.species]['pval_cts_calls'],
+        null_perm = lambda wildcards: "4000" if wildcards.species == "os" else "5000",
+        bootstraps = lambda wildcards: "2000" if wildcards.species == "os" else "2000"
+   resources:
+       mem_mb=large,
+       disk_mb=1125000,
+       runtime=2880,
+       partition="schmitz_hm_p"
+   threads: 15
+   output:
+       dir = directory("03.peak_assignment/{species}_dir"),
+       class_acrs = "03.peak_assignment/{species}_dir/{species}_acr_classification.no_exons.all_ACRs.classified.bed",
+       class_ctr_acrs = "03.peak_assignment/{species}_dir/{species}_acr_classification.no_exons.all_ctr.ACRs.bed"
+   message: "Running peak specificity script"
+   conda:
+       "envs/Rdev_2023-10-04.yaml"
+   shell:""" 
+   R_LIBS_USER=/home/jpm73279/.conda/envs/R_final_install/lib/R/library
+   Rscript scripts/call_ctsACRs.Bootstrap.r --input_data {input.acr_acc} \
+   --peak_file {input.peaks_no_exons} --meta {input.meta} \
+   --meta_slot {params.col_val} --prefix {params.base_output} \
+   --threshold {params.pval} --stat_test perm --null_permutations \
+   {params.null_perm} --entropy_bootstraps {params.bootstraps}
+   """
+
+
+rule intersect_all_acrs_genomic_features:
+   input:
+       classified_acrs = rules.call_cts_acrs.output.class_acrs,
+   params:
+        exons =   lambda wildcards:
+            config["species"][wildcards.species]["bed_genomic_features"]["exons"],
+        introns =   lambda wildcards: config["species"][wildcards.species]["bed_genomic_features"]["introns"],
+        tss =   lambda wildcards: config["species"][wildcards.species]["bed_genomic_features"]["tss"],
+        promoters =   lambda wildcards: config["species"][wildcards.species]["bed_genomic_features"]["promoters"],
+        intergenic =   lambda wildcards: config["species"][wildcards.species]["bed_genomic_features"]["intergenic"]
+   resources:
+       #mem_mb=x,
+       disk_mb=2000,
+       runtime=900,
+       partition="schmitz_p"
+   threads: 4 
+   output:
+        "04.peak_annotation/{species}_dir/{species}_acr.annotated.bed",
+   message: "Annotating classified ACRs"
+   conda:
+        "envs/pydev_2023-02-21.yaml"
+   shell:""" 
+   bedtools annotate -i {input.classified_acrs} -files {params.introns} {params.tss} {params.promoters} {params.intergenic} -names introns TSS promoters intergenic > {output}
+   """
+
+
+rule intersect_ACRs_with_CNSs:
+    input:
+        peak_file = rules.call_cts_acrs.output.class_acrs,
+        CNS_file = lambda wildcards:
+            config["species"][wildcards.species]['CNS_regions']
+    resources:
+        #mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    params:
+        "00.data/anno_data/{species}.sorted_CNS.bed"
+    output:
+        sorted_acrs = "03.peak_assignment/{species}_dir/{species}_acr_classification.no_exons.all_ACRs.classified.sorted.bed",
+        ACR_cns_intersection = "04.peak_annotation/{species}_dir/{species}.ACR_CNS.intersection.bed"
+    message: "Removing ACRs overlapping Exons"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    bedtools sort -i {input.CNS_file} > {params}
+    bedtools sort -i {input.peak_file} > {output.sorted_acrs}
+    bedtools closest -a {output.sorted_acrs} -b {params} -d > {output.ACR_cns_intersection}
+    """
+
+rule ACRs_closest_gene:
+    input:
+        peak_file = rules.intersect_ACRs_with_CNSs.output.sorted_acrs,
+        bed_gene_annot_file = lambda wildcards: config["species"][wildcards.species]['gene_bed']
+    resources:
+        #mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    output:
+        acr_closest_gene = "04.peak_annotation/{species}_dir/{species}_acr.closest_genes.sorted.bed"
+    message: "Removing ACRs overlapping Exons"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    bedtools sort -i {input.bed_gene_annot_file} | bedtools closest -a {input.peak_file} -b - -d > {output.acr_closest_gene}
+    """
+
+rule intersect_CNSs_wth_ACRs:
+    input:
+        sorted_acrs = rules.intersect_ACRs_with_CNSs.output.sorted_acrs,
+        CNS_file = lambda wildcards:
+            config["species"][wildcards.species]['CNS_regions']
+    resources:
+        mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    params:
+        "00.data/anno_data/{species}.sorted_CNS.bed"
+    output:
+        CNS_acr_intersection = "04.peak_annotation/{species}_dir/{species}.CNS_ACRs.intersection.bed"
+    message: "Removing ACRs overlapping Exons"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    bedtools sort -i {input.CNS_file} > {params}
+    bedtools intersect -b {input.sorted_acrs} -a {params} -wa -wb > {output.CNS_acr_intersection}
+    """
+
+rule copy_cts_acrs:
+    input:
+        output_dir = rules.call_cts_acrs.output.dir
+    params:
+          cell_type = lambda wildcards: "03.peak_assignment/{species}_dir/{species}_acr_classification.no_exons.{cell_type}.cts.ACRs.bed".format(
+            species=wildcards.species,
+            cell_type=wildcards.cell_type
+        ) if (wildcards.species, wildcards.cell_type) in cell_type_species_pairs else ""
+    resources:
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    output:
+        bed = "05.pull_sequence_under_peaks/{species}_dir/fasta/{species}_acr_classification.no_exons.{cell_type}.cts.ACRs.bed"
+    message: "Pulling sequence underlying ACRs"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    cp {params} {output}
+    """
+
+rule get_fasta_file:
+    input:
+       classified_acrs = rules.copy_cts_acrs.output.bed,
+    params:
+       fasta_file = lambda wildcards: config["species"][wildcards.species]['fasta']
+    resources:
+        mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    output:
+        fa_acrs = "05.pull_sequence_under_peaks/{species}_dir/fasta/{species}.cts_{cell_type}.fa"
+    message: "Pulling sequence underlying ACRs"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    bedtools getfasta -name -fi {params.fasta_file} -bed {input.classified_acrs} > {output.fa_acrs}
+    """
+
+rule generate_null_distribution_bed:
+    input:
+       classified_acrs = rules.copy_cts_acrs.output.bed,
+    params:
+       fasta_file = lambda wildcards:
+           config["species"][wildcards.species]['fasta'],
+       fai_file = lambda wildcards:
+           config["species"][wildcards.species]['fasta_fai'],
+       exons =   lambda wildcards:
+           config["species"][wildcards.species]["bed_genomic_features"]["exons"],
+       base_name = "05.pull_sequence_under_peaks/{species}_dir/fasta/{species}.cts_{cell_type}."
+    resources:
+        mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    output:
+        fa_acrs = "05.pull_sequence_under_peaks/{species}_dir/fasta/{species}.cts_{cell_type}.null_regions.bed"
+    message: "Pulling sequence underlying ACRs"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    python scripts/gen_null_fa.py -bed {input.classified_acrs} -exclusion_beds {params.exons} -genome {params.fasta_file} -genome_index {params.fai_file} -o {params.base_name}
+    """
+
+rule get_null_fasta:
+    input:
+       classified_acrs = rules.generate_null_distribution_bed.output.fa_acrs,
+    params:
+       fasta_file = lambda wildcards: config["species"][wildcards.species]['fasta']
+    resources:
+        mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    output:
+        fa_acrs = "05.pull_sequence_under_peaks/{species}_dir/fasta/{species}.cts_{cell_type}.null_regions.fa"
+    message: "Pulling sequence underlying ACRs"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    bedtools getfasta -name -fi {params.fasta_file} -bed {input.classified_acrs} > {output.fa_acrs}
+    """
+
+rule run_xstreme:
+    input:
+        acr_sequences = rules.get_fasta_file.output.fa_acrs,
+        control_sequences = rules.get_null_fasta.output.fa_acrs
+    params:
+        cell_type_dir ="06.motif_enrichment/{species}_dir/{cell_type}/xstreme",
+        motifs = config['motifs'],
+    resources:
+        mem_mb=x,
+        disk_mb=100000,
+        runtime=1000,
+        partition="schmitz_p"
+    output:
+        output_file ="06.motif_enrichment/{species}_dir/{cell_type}/xstreme/xstreme.txt"
+    message: "Running xstreme on cell types"
+    conda:
+        "envs/MEME_suite.yaml"
+    threads:5
+    shell:""" 
+    xstreme --p {input.acr_sequences} --n {input.control_sequences} --oc {params.cell_type_dir} --m {params.motifs}
+    """
+
+
+rule get_all_fasta:
+    input:
+       all_acrs = rules.call_cts_acrs.output.class_acrs
+    params:
+       fasta_file = lambda wildcards: config["species"][wildcards.species]['fasta']
+    resources:
+        mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    output:
+        all_acr_fasta = "06.motif_enrichment/{species}_dir/all_acrs/{species}.all_acrs.fa"
+    message: "Pulling sequence underlying ACRs"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    bedtools getfasta -name -fi {params.fasta_file} -bed {input.all_acrs} > {output.all_acr_fasta}
+    """
+
+rule run_fimo:
+    input:
+        acr_sequences = rules.get_all_fasta.output.all_acr_fasta,
+    params:
+        motifs = config['motifs'],
+        outdir = "06.motif_enrichment/{species}_dir/all_acrs/{species}_fimo_output"
+    resources:
+        mem_mb=x,
+        disk_mb=100000,
+        runtime=2999,
+        partition="schmitz_p"
+    output:
+        output_file = "06.motif_enrichment/{species}_dir/all_acrs/{species}_fimo_output/fimo.tsv"
+    message: "Running fimo on cell types"
+    conda:
+        "envs/MEME_suite.yaml"
+    threads:5
+    shell:""" 
+    fimo --o {params.outdir} --oc {params.outdir} {params.motifs} {input.acr_sequences} 
+    """
+
+rule run_fimo_all_TFs:
+    input:
+        acr_sequences = rules.get_all_fasta.output.all_acr_fasta,
+    params:
+        motifs = config['motifs_all'],
+        outdir = "06.motif_enrichment/{species}_dir/all_acrs/{species}_fimo_output_all_tfs"
+    resources:
+        mem_mb=x,
+        disk_mb=100000,
+        runtime=2999,
+        partition="schmitz_p"
+    output:
+        output_file = "06.motif_enrichment/{species}_dir/all_acrs/{species}_fimo_output_all_tfs/fimo.tsv"
+    message: "Running fimo on cell types"
+    conda:
+        "envs/MEME_suite.yaml"
+    threads:5
+    shell:""" 
+    fimo --o {params.outdir} --oc {params.outdir} {params.motifs} {input.acr_sequences} 
+    """
+
+rule run_fimo_silencing_pres:
+    input:
+        acr_sequences = rules.get_all_fasta.output.all_acr_fasta,
+    params:
+        motifs = config['motifs_silencers'],
+        outdir = "06.motif_enrichment/{species}_dir/all_acrs/{species}_fimo_output_pres"
+    resources:
+        mem_mb=x,
+        disk_mb=100000,
+        runtime=2999,
+        partition="schmitz_p"
+    output:
+        output_file = "06.motif_enrichment/{species}_dir/all_acrs/{species}_fimo_output_pres/fimo.tsv"
+    message: "Running fimo on cell types"
+    conda:
+        "envs/MEME_suite.yaml"
+    threads:5
+    shell:""" 
+    fimo --o {params.outdir} --oc {params.outdir} {params.motifs} {input.acr_sequences} 
+    """
+
+rule run_fimo_de_novo:
+    input:
+        acr_sequences = rules.get_all_fasta.output.all_acr_fasta,
+    params:
+        motifs = config['motifs_discovered'],
+        outdir = "06.motif_enrichment/{species}_dir/all_acrs/{species}_fimo_output_de_novo"
+    resources:
+        mem_mb=x,
+        disk_mb=100000,
+        runtime=2999,
+        partition="schmitz_p"
+    output:
+        output_file = "06.motif_enrichment/{species}_dir/all_acrs/{species}_fimo_output_de_novo/fimo.tsv"
+    message: "Running fimo on cell types"
+    conda:
+        "envs/MEME_suite.yaml"
+    threads:5
+    shell:""" 
+    fimo --o {params.outdir} --oc {params.outdir} {params.motifs} {input.acr_sequences} 
+    """
+
+
+
+
+
+rule generate_null_bed_samples:
+   input:
+       classified_acrs = rules.call_cts_acrs.output.class_acrs
+   params:
+       fasta_file = lambda wildcards: config["species"][wildcards.species]['fasta'],
+       control_bed_output_base = "06.motif_enrichment/{species}_dir/control_bed/{species}",
+       fai = lambda wildcards: config["species"][wildcards.species]['fasta_fai'],
+   resources:
+       #mem_mb=x,
+       disk_mb=2000,
+       runtime=900,
+       partition="schmitz_p"
+   threads: 2
+   output:
+        control_output = "06.motif_enrichment/{species}_dir/control_bed/{species}.done"
+   message: "Annotating classified ACRs"
+   conda:
+        "envs/pydev_2023-02-21.yaml"
+   shell:""" 
+   python scripts/gen_null_bed_sample.iter.py -bed {input.classified_acrs} -genome {params.fasta_file} -genome_index {params.fai} -o {params.control_bed_output_base}
+   touch {output.control_output}
+   """
+
+rule calculate_peak_acc_chromvar:
+   input:
+    peak_file = rules.filter_peaks_no_exons.output,
+    bed_file = lambda wildcards: samples.loc[(wildcards.species), 'bed'],
+    meta_file = lambda wildcards: samples.loc[(wildcards.species), 'meta_data'],
+    fai = lambda wildcards: config["species"][wildcards.species]['fasta_fai'],
+    gff3 = lambda wildcards: config["species"][wildcards.species]['gff3']
+   params:
+       chrom_size = "07.chrom_var/{species}.chrom_size",
+       base_name = "07.chrom_var/{species}"
+   resources:
+       mem_mb=large,
+       disk_mb=110000,
+       runtime=2880,
+       partition="schmitz_hm_p"
+   threads: 2
+   output:
+        chromvar_peak_by_intersection = "07.chrom_var/{species}.peaks_by_intersections.rds"
+   message: "Annotating classified ACRs"
+   conda:
+       "envs/Rdev_2023-10-04.yaml"
+   shell:""" 
+    awk 'BEGIN {{OFS="\t"}} {{print $1, $2}}' {input.fai} > {params.chrom_size}
+
+    Rscript scripts/generate_peak_by_cell_intersections.r {input.bed_file} {input.peak_file} {input.meta_file} {input.gff3} {params.chrom_size} {params.base_name}
+   """
+
+rule generate_extended_c4_genes:
+   input:
+        c4_gene_file = lambda wildcards: samples.loc[(wildcards.species), 'c4_genes'],
+        bed_file_genes = lambda wildcards: config["species"][wildcards.species]['gene_bed']
+   resources:
+       mem_mb=small,
+       disk_mb=2000,
+       runtime=1000,
+       partition="batch"
+   threads: 2
+   output:
+        extended_genes = "08.C4_gene_relationship/extended_genes/{species}.extended_c4_genes.bed"
+   message: "Extending C4 genes for intersection"
+   conda:
+        "envs/pydev_2023-02-21.yaml"
+   shell:""" 
+   python scripts/extend_gene_windows.py -bed {input.c4_gene_file} -all_genes {input.bed_file_genes} -o {output}
+   """
+
+
+rule sort_c4_genes:
+   input:
+        c4_gene_file = lambda wildcards: samples.loc[(wildcards.species), 'c4_genes']
+   resources:
+       mem_mb=small,
+       disk_mb=2000,
+       runtime=1000,
+       partition="batch"
+   threads: 2
+   output:
+        sorted_c4 = "08.C4_gene_relationship/sorted/{species}.sorted_c4_genes.bed"
+   message: "Extending C4 genes for intersection"
+   conda:
+        "envs/pydev_2023-02-21.yaml"
+   shell:""" 
+   bedtools sort -i {input.c4_gene_file} > {output.sorted_c4}
+   """
+
+rule updated_mesophyll_bs_acr_calling:
+    input:
+        ctr_acrs = rules.call_cts_acrs.output.class_ctr_acrs
+    params:
+       cell_type = lambda wildcards: "03.peak_assignment/{species}_dir/{species}_acr_classification.no_exons.{cell_type}.cts.ACRs.bed".format(
+         species=wildcards.species,
+         cell_type=wildcards.cell_type
+     ) if (wildcards.species, wildcards.cell_type) in cell_type_species_pairs else "", # if the cell type is not in the species, then we don't have any peaks for it
+       tmp ="08.C4_gene_relationship/sorted_acrs/{species}.tmp.{cell_type}.sorted.bed",
+       cell_type_card = lambda wildcards: wildcards.cell_type
+    resources:
+        mem_mb=small,
+        disk_mb=2000,
+        runtime=1000,
+        partition="batch"
+    threads: 2
+    priority: 1
+    output:
+         updated_acrs = "08.C4_gene_relationship/updated_acrs/{species}.updated_acrs.{cell_type}.bed"
+    message: "Extending C4 genes for intersection"
+    conda:
+         "envs/pydev_2023-02-21.yaml"
+    shell:""" 
+    cat {input.ctr_acrs} {params.cell_type} | python scripts/filter.bs_pcm.py -cell_type {params.cell_type_card} | bedtools sort -i - > {output}
+    """
+
+
+rule intersect_extended_c4_genes:
+   input:
+       extended_c4_genes = rules.generate_extended_c4_genes.output.extended_genes,
+       c4_genes = rules.sort_c4_genes.output.sorted_c4
+   params:
+      cell_type = lambda wildcards: "08.C4_gene_relationship/updated_acrs/{species}.updated_acrs.{cell_type}.bed".format(
+        species=wildcards.species,
+        cell_type=wildcards.cell_type
+    ) if (wildcards.species, wildcards.cell_type) in cell_type_species_pairs else "", # if the cell type is not in the species, then we don't have any peaks for it
+      tmp = "08.C4_gene_relationship/sorted_acrs/{species}.tmp.{cell_type}.sorted.bed"
+   resources:
+       mem_mb=small,
+       disk_mb=2000,
+       runtime=1000,
+       partition="batch"
+   threads: 2
+   output:
+        C4_intersection = "08.C4_gene_relationship/intersections/{species}.extended_c4_genes.{cell_type}.intersection.bed",
+        C4_closest = "08.C4_gene_relationship/intersections/{species}.extended_c4_genes.{cell_type}.closest.bed"
+   message: "Extending C4 genes for intersection"
+   conda:
+        "envs/pydev_2023-02-21.yaml"
+   shell:""" 
+    bedtools intersect -a {input.extended_c4_genes} -b {params.cell_type} -wa -wb > {output.C4_intersection}
+    bedtools sort -i {params.cell_type} | bedtools closest -a {input.c4_genes} -b - -d -k 10 > {output.C4_closest}
+   """
+
+
+rule intersec_broad_acrs:
+   input:
+       extended_c4_genes = rules.generate_extended_c4_genes.output.extended_genes,
+       all_acrs_classified = rules.call_cts_acrs.output.class_acrs,
+       c4_genes = rules.sort_c4_genes.output.sorted_c4
+   resources:
+       mem_mb=small,
+       disk_mb=2000,
+       runtime=1000,
+       partition="batch"
+   threads: 2
+   output:
+        tmp = "08.C4_gene_relationship/sorted_acrs/{species}.broad_acrs.sorted.bed",
+        C4_intersection = "08.C4_gene_relationship/intersections/{species}.extended_c4_genes.broad_intersection.bed",
+        C4_closest = "08.C4_gene_relationship/intersections/{species}.extended_c4_genes_broad.closest.bed"
+   message: "Extending C4 genes for intersection"
+   conda:
+        "envs/pydev_2023-02-21.yaml"
+   shell:""" 
+   awk '{{if($4 ~ /broad/) print $0}}' {input.all_acrs_classified} | bedtools sort -i - > {output.tmp}
+   bedtools intersect -a {input.extended_c4_genes} -b {output.tmp} -wa -wb > {output.C4_intersection}
+   bedtools sort -i {output.tmp} | bedtools closest -a {input.c4_genes} -b - -d -k 10 > {output.C4_closest}
+   """
+
+
+
+#rule intersect_extended_c4_genes:
+#   input:
+#       extended_c4_genes = rules.generate_extended_c4_genes.output.extended_genes,
+#       c4_genes = rules.sort_c4_genes.output.sorted_c4
+#   params:
+#      cell_type = lambda wildcards: "03.peak_assignment/{species}_dir/{species}_acr_classification.no_exons.{cell_type}.cts.ACRs.bed".format(
+#        species=wildcards.species,
+#        cell_type=wildcards.cell_type
+#    ) if (wildcards.species, wildcards.cell_type) in cell_type_species_pairs else "", # if the cell type is not in the species, then we don't have any peaks for it
+#      tmp = "08.C4_gene_relationship/sorted_acrs/{species}.tmp.{cell_type}.sorted.bed"
+#   resources:
+#       mem_mb=small,
+#       disk_mb=2000,
+#       runtime=1000,
+#       partition="batch"
+#   threads: 2
+#   output:
+#        C4_intersection = "08.C4_gene_relationship/intersections/{species}.extended_c4_genes.{cell_type}.intersection.bed",
+#        C4_closest = "08.C4_gene_relationship/intersections/{species}.extended_c4_genes.{cell_type}.closest.bed"
+#   message: "Extending C4 genes for intersection"
+#   conda:
+#        "envs/pydev_2023-02-21.yaml"
+#   shell:""" 
+#    bedtools intersect -a {input.extended_c4_genes} -b {params.cell_type} -wa -wb > {output.C4_intersection}
+#    bedtools sort -i {params.cell_type} | bedtools closest -a {input.c4_genes} -b - -d -k 10 > {output.C4_closest}
+#   """
+
+
+
+############################################
+# 08. Motif enrichment
+#Just ACRs around C4 genes. Limited number of CTS ACRs
+############################################
+rule get_fasta_file_c4_acrs:
+    input:
+       classified_acrs = rules.intersect_extended_c4_genes.output.C4_intersection,
+    params:
+       fasta_file = lambda wildcards: config["species"][wildcards.species]['fasta']
+    resources:
+        mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    output:
+        fa_acrs = "08.C4_gene_relationship/fasta/{species}.extended_c4_genes.acrs.{cell_type}.fasta",
+    message: "Pulling sequence underlying ACRs"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    bedtools getfasta -name -fi {params.fasta_file} -bed {input.classified_acrs} > {output.fa_acrs}
+    """
+
+rule generate_null_distribution_bed_c4_acrs:
+    input:
+       classified_acrs = rules.intersect_extended_c4_genes.output.C4_intersection,
+       all_acrs = rules.call_cts_acrs.output.class_acrs,
+    params:
+       fasta_file = lambda wildcards:
+           config["species"][wildcards.species]['fasta'],
+       fai_file = lambda wildcards:
+           config["species"][wildcards.species]['fasta_fai'],
+       exons =   lambda wildcards:
+           config["species"][wildcards.species]["bed_genomic_features"]["exons"],
+       base_name = "08.C4_gene_relationship/intersection/{species}.extended_c4_genes.acrs.{cell_type}"
+    resources:
+        mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    output:
+        null_fa_acrs = "08.C4_gene_relationship/intersection/{species}.extended_c4_genes.acrs.{cell_type}.broad_acr_null_list.bed",
+    message: "Pulling sequence underlying ACRs"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    python scripts/gen_null_bed_sample.c4_genes.py -bed {input.classified_acrs} -bed2 {input.all_acrs} -genome {params.fasta_file} -genome_index {params.fai_file} -o {params.base_name}
+    """
+
+rule get_null_fasta_c4_acrs:
+    input:
+       classified_acrs = rules.generate_null_distribution_bed_c4_acrs.output.null_fa_acrs
+    params:
+       fasta_file = lambda wildcards: config["species"][wildcards.species]['fasta']
+    resources:
+        mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    output:
+        fa_acrs = "08.C4_gene_relationship/fasta/{species}.extended_c4_genes.acrs.{cell_type}.null_regions.fasta",
+    message: "Pulling sequence underlying ACRs"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    bedtools getfasta -name -fi {params.fasta_file} -bed {input.classified_acrs} > {output.fa_acrs}
+    """
+
+rule run_xstreme_c4_acrs:
+    input:
+        acr_sequences = rules.get_fasta_file_c4_acrs.output.fa_acrs,
+        control_sequences = rules.get_null_fasta_c4_acrs.output.fa_acrs
+    params:
+        cell_type_dir ="08.C4_gene_relationship/{species}.extended_c4_genes.acrs.{cell_type}/xstreme",
+        motifs = config['motifs'],
+    resources:
+        mem_mb=x,
+        disk_mb=100000,
+        runtime=1000,
+        partition="schmitz_p"
+    output:
+        output_file ="08.C4_gene_relationship/{species}.extended_c4_genes.acrs.{cell_type}/xstreme/xstreme.txt",
+    message: "Running xstreme on cell types"
+    conda:
+        "envs/MEME_suite.yaml"
+    threads:5
+    shell:""" 
+    xstreme --p {input.acr_sequences} --n {input.control_sequences} --oc {params.cell_type_dir} --m {params.motifs}
+    """
+
+
+
+#####
+#### Motif Enrichment for UPdated Bs and Ms calls
+rule get_fasta_file_c4_acrs_updated:
+    input:
+       classified_acrs = rules.updated_mesophyll_bs_acr_calling.output.updated_acrs
+    params:
+       fasta_file = lambda wildcards: config["species"][wildcards.species]['fasta']
+    resources:
+        mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    output:
+        fa_acrs = "09.updated_ms_bs_acr_calling/fasta/{species}.extended_c4_genes.acrs.{cell_type}.fasta",
+    message: "Pulling sequence underlying ACRs"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    bedtools getfasta -name -fi {params.fasta_file} -bed {input.classified_acrs} > {output.fa_acrs}
+    """
+
+rule generate_null_distribution_bed_c4_acrs_updated:
+    input:
+       classified_acrs = rules.updated_mesophyll_bs_acr_calling.output.updated_acrs,
+       all_acrs = rules.call_cts_acrs.output.class_acrs,
+    params:
+       fasta_file = lambda wildcards:
+           config["species"][wildcards.species]['fasta'],
+       fai_file = lambda wildcards:
+           config["species"][wildcards.species]['fasta_fai'],
+       exons =   lambda wildcards:
+           config["species"][wildcards.species]["bed_genomic_features"]["exons"],
+       base_name = "09.updated_ms_bs_acr_calling/intersection/{species}.extended_c4_genes.acrs.{cell_type}"
+    resources:
+        mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    output:
+        null_fa_acrs = "09.updated_ms_bs_acr_calling/intersection/{species}.extended_c4_genes.acrs.{cell_type}.broad_acr_null_list.bed",
+    message: "Pulling sequence underlying ACRs"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    python scripts/gen_null_bed_sample.c4_genes.py -bed {input.classified_acrs} -bed2 {input.all_acrs} -genome {params.fasta_file} -genome_index {params.fai_file} -o {params.base_name}
+    """
+
+rule get_null_fasta_c4_acrs_updated:
+    input:
+       classified_acrs = rules.generate_null_distribution_bed_c4_acrs_updated.output.null_fa_acrs
+    params:
+       fasta_file = lambda wildcards: config["species"][wildcards.species]['fasta']
+    resources:
+        mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="schmitz_p"
+    output:
+        fa_acrs = "09.updated_ms_bs_acr_calling/fasta/{species}.extended_c4_genes.acrs.{cell_type}.null_regions.fasta",
+    message: "Pulling sequence underlying ACRs"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    bedtools getfasta -name -fi {params.fasta_file} -bed {input.classified_acrs} > {output.fa_acrs}
+    """
+
+rule run_xstreme_c4_acrs_updated:
+    input:
+        acr_sequences = rules.get_fasta_file_c4_acrs_updated.output.fa_acrs,
+        control_sequences = rules.get_null_fasta_c4_acrs_updated.output.fa_acrs
+    params:
+        cell_type_dir ="09.updated_ms_bs_acr_calling/{species}.extended_c4_genes.acrs.{cell_type}/xstreme",
+        motifs = config['motifs'],
+    resources:
+        mem_mb=x,
+        disk_mb=100000,
+        runtime=1000,
+        partition="schmitz_p"
+    output:
+        output_file ="09.updated_ms_bs_acr_calling/{species}.extended_c4_genes.acrs.{cell_type}/xstreme/xstreme.txt",
+    message: "Running xstreme on cell types"
+    conda:
+        "envs/MEME_suite.yaml"
+    threads:5
+    shell:""" 
+    xstreme --p {input.acr_sequences} --n {input.control_sequences} --oc {params.cell_type_dir} --m {params.motifs}
+    """
+
+
+
+###
+## Update this to only include a gene that is ONE away. So NO gene skippingl.
+## Going this to shut Bob the FUCK up. 
+###
+
+
+rule generate_extended_c4_genes_only_1:
+   input:
+        c4_gene_file = lambda wildcards: samples.loc[(wildcards.species), 'c4_genes'],
+        bed_file_genes = lambda wildcards: config["species"][wildcards.species]['gene_bed']
+   resources:
+       mem_mb=small,
+       disk_mb=2000,
+       runtime=1000,
+       partition="batch"
+   threads: 2
+   output:
+        extended_genes ="10.C4_gene_relationship_only_single_gene/extended_genes/{species}.extended_c4_genes.bed",
+        sorted_extended = "10.C4_gene_relationship_only_single_gene/extended_genes/{species}.extended_c4_genes.sorted.bed"
+   message: "Extending C4 genes for intersection"
+   conda:
+        "envs/pydev_2023-02-21.yaml"
+   shell:""" 
+   python scripts/extend_gene_windows.py -bed {input.c4_gene_file} -n 1 -all_genes {input.bed_file_genes} -o {output.extended_genes}
+   bedtools sort -i {output.extended_genes} > {output.sorted_extended}
+   """
+
+
+rule intersect_extended_c4_genes_only_1:
+   input:
+       extended_c4_genes = rules.generate_extended_c4_genes_only_1.output.sorted_extended,
+       c4_genes = rules.sort_c4_genes.output.sorted_c4
+   params:
+        cell_type = lambda wildcards: "08.C4_gene_relationship/updated_acrs/{species}.updated_acrs.{cell_type}.bed".format(
+            species=wildcards.species,
+            cell_type=wildcards.cell_type
+     ) if (wildcards.species, wildcards.cell_type) in cell_type_species_pairs else "", # if the cell type is not in the species, then we don't have any peaks for it
+   resources:
+       mem_mb=small,
+       disk_mb=2000,
+       runtime=1000,
+       partition="batch"
+   threads: 2
+   output:
+        C4_intersection = "10.C4_gene_relationship_only_single_gene/intersections/{species}.extended_c4_genes.{cell_type}.intersection.bed",
+        C4_closest = "10.C4_gene_relationship_only_single_gene/intersections/{species}.extended_c4_genes.{cell_type}.closest.bed"
+   message: "Extending C4 genes for intersection"
+   conda:
+        "envs/pydev_2023-02-21.yaml"
+   shell:""" 
+    bedtools intersect -a {input.extended_c4_genes} -b {params.cell_type} -wa -wb > {output.C4_intersection}
+    bedtools sort -i {params.cell_type} | bedtools closest -a {input.c4_genes} -b - -d -k 10 > {output.C4_closest}
+   """
+
+
+rule intersec_broad_acrs_only_1:
+   input:
+       extended_c4_genes = rules.generate_extended_c4_genes_only_1.output.sorted_extended,
+       all_acrs_classified = rules.call_cts_acrs.output.class_acrs,
+       c4_genes = rules.sort_c4_genes.output.sorted_c4
+   resources:
+       mem_mb=small,
+       disk_mb=2000,
+       runtime=1000,
+       partition="batch"
+   threads: 2
+   output:
+        tmp = "10.C4_gene_relationship_only_single_gene/sorted_acrs/{species}.broad_acrs.sorted.bed",
+        C4_intersection = "10.C4_gene_relationship_only_single_gene/intersections/{species}.extended_c4_genes.broad_intersection.bed",
+        C4_closest = "10.C4_gene_relationship_only_single_gene/intersections/{species}.extended_c4_genes_broad.closest.bed"
+   message: "Extending C4 genes for intersection"
+   conda:
+        "envs/pydev_2023-02-21.yaml"
+   shell:""" 
+   awk '{{if($4 ~ /broad/) print $0}}' {input.all_acrs_classified} | bedtools sort -i - > {output.tmp}
+   bedtools intersect -a {input.extended_c4_genes} -b {output.tmp} -wa -wb > {output.C4_intersection}
+   bedtools sort -i {output.tmp} | bedtools closest -a {input.c4_genes} -b - -d -k 10 > {output.C4_closest}
+   """
+
+
+rule intersec_all_acrs_only_1:
+   input:
+       extended_c4_genes = rules.generate_extended_c4_genes_only_1.output.sorted_extended,
+       all_acrs_classified = rules.call_cts_acrs.output.class_acrs,
+       c4_genes = rules.sort_c4_genes.output.sorted_c4
+   resources:
+       mem_mb=small,
+       disk_mb=2000,
+       runtime=1000,
+       partition="batch"
+   threads: 2
+   output:
+        tmp = "10.C4_gene_relationship_only_single_gene/sorted_acrs/{species}.broad_acrs.sorted.bed",
+        C4_intersection ="10.C4_gene_relationship_only_single_gene/all_acr_intersections/{species}.extended_c4_genes.acr_intersection.all.bed",
+        C4_closest ="10.C4_gene_relationship_only_single_gene/all_acr_intersections/{species}.extended_c4_genes.closest.all.bed"
+   message: "Interscting ALL ACRs"
+   conda:
+        "envs/pydev_2023-02-21.yaml"
+   shell:""" 
+   bedtools sort -i {input.all_acrs_classified} > {output.tmp}
+   bedtools intersect -a {input.extended_c4_genes} -b {output.tmp} -wa -wb > {output.C4_intersection}
+   bedtools sort -i {output.tmp} | bedtools closest -a {input.c4_genes} -b - -d -k 10 > {output.C4_closest}
+   """
+
+
+#### TO DO -- RUN SO WE FIND LESS FP's and MORE SPECIFICTY
+rule get_fasta_file_subset_acrs:
+    input:
+        acr_regions = rules.intersec_all_acrs_only_1.output.C4_intersection,
+    params:
+        fasta_file = lambda wildcards: config["species"][wildcards.species]['fasta']
+    resources:
+        mem_mb=x,
+        disk_mb=2000,
+        runtime=120,
+        partition="batch"
+    output:
+        bed_acrs = "10.C4_gene_relationship_only_single_gene/motif_analysis/fasta/{species}.acr_intersection.bed",
+        fa_acrs = "10.C4_gene_relationship_only_single_gene/motif_analysis/fasta/{species}.acrs.fa"
+    message: "Pulling sequence underlying ACRs"
+    conda:
+        "envs/pydev_2023-02-21.yaml"
+    threads:5
+    shell:""" 
+    awk -F'\t' 'BEGIN {{OFS = FS}} {{print $6,$7,$8,$9,$10}}' {input.acr_regions} > {output.bed_acrs}
+    bedtools getfasta -name -fi {params.fasta_file} -bed {output.bed_acrs} > {output.fa_acrs}
+    """
+
+rule run_fimo_only_c4_acrs:
+    input:
+        acr_regions = rules.get_fasta_file_subset_acrs.output.fa_acrs
+    params:
+        motifs = config['motifs'],
+        motifs_de_novo = config['motifs_discovered'],
+        outdir_all = "10.C4_gene_relationship_only_single_gene/motif_analysis/{species}_fimo_output_all_tfs",
+        outdir_de_novo = "10.C4_gene_relationship_only_single_gene/motif_analysis/{species}_fimo_output_de_novo"
+    resources:
+        mem_mb=x,
+        disk_mb=100000,
+        runtime=2999,
+        partition="schmitz_p"
+    output:
+        all_motifs_fimo = "10.C4_gene_relationship_only_single_gene/motif_analysis/{species}_fimo_output_all_tfs/fimo.tsv",
+        de_novo_motifs_fimo = "10.C4_gene_relationship_only_single_gene/motif_analysis/{species}_fimo_output_de_novo/fimo.tsv"
+    message: "Running fimo on cell types"
+    conda:
+        "envs/MEME_suite.yaml"
+    threads:5
+    shell:""" 
+    fimo --o {params.outdir_all} --oc {params.outdir_all} {params.motifs} {input.acr_regions} 
+    fimo --o {params.outdir_de_novo} --oc {params.outdir_de_novo} {params.motifs_de_novo} {input.acr_regions} 
+    """
+
+
+
+rule run_xtreme_c4_acrs_contrasting:
+    input:
+        mesophyll_acrs = "09.updated_ms_bs_acr_calling/fasta/{species}.extended_c4_genes.acrs.mesophyll.fasta",
+        bundle_sheath_acrs = "09.updated_ms_bs_acr_calling/fasta/{species}.extended_c4_genes.acrs.bundle_sheath.fasta"
+    params:
+        motifs = config['motifs'],
+        bs_vs_ms_dir = "11.contrasting_bs_ms/{species}_fimo_output_bs_vs_ms/xstreme",
+        ms_vs_bs_dir = "11.contrasting_bs_ms/{species}_fimo_output_ms_vs_bs/xstreme",
+    resources:
+        mem_mb=x,
+        disk_mb=100000,
+        runtime=2999,
+        partition="batch"
+    output:
+        bs_vs_ms_dir_output = "11.contrasting_bs_ms/{species}_fimo_output_bs_vs_ms/xstreme/xstreme.txt",
+        ms_vs_bs_dir_output= "11.contrasting_bs_ms/{species}_fimo_output_ms_vs_bs/xstreme/xstreme.txt"
+    message: "Running fimo on cell types"
+    conda:
+        "envs/MEME_suite.yaml"
+    threads:5
+    shell:""" 
+    xstreme --fimo-skip --maxw 12 --p {input.mesophyll_acrs} --n {input.bundle_sheath_acrs} --oc {params.ms_vs_bs_dir} --m {params.motifs} 
+    xstreme --fimo-skip --maxw 12 --p {input.bundle_sheath_acrs} --n {input.mesophyll_acrs} --oc {params.bs_vs_ms_dir} --m {params.motifs} 
+    """
+
+
+
+
+
+
+
+

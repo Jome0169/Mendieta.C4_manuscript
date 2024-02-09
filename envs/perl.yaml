@@ -1,0 +1,17 @@
+name: perl
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - _libgcc_mutex=0.1=conda_forge
+  - _openmp_mutex=4.5=1_gnu
+  - libgcc=7.2.0=h69d50b8_2
+  - libgcc-ng=11.2.0=h1d223b6_9
+  - libgomp=11.2.0=h1d223b6_9
+  - libstdcxx-ng=11.2.0=he4da1e4_9
+  - perl=5.32.1=1_h7f98852_perl5
+  - perl-bio-db-sam=1.41=2
+  - perl-bioperl=1.6.924=2
+  - perl-threaded=5.26.0=0
+prefix: /home/jpm73279/.conda/envs/perl

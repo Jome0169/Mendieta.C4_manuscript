@@ -1,0 +1,46 @@
+sample_comparisons: ID_markers.combos.tsv
+marker_location: 00.data/ref_markers
+tissues: "leaf"
+bed_files:
+    Zm: 00.data/bed_annot/Zm-B73-REFERENCE-NAM_Zm00001eb.1.genes.bed
+    Sb: 00.data/bed_annot/Sbicolorv5.1.gene.bed
+    Pm: 00.data/bed_annot/Pmiliaceum.genes.renamed.short.bed
+    Uf: 00.data/bed_annot/Ufusca_669_v1.1.gene_only.bed
+    Os: 00.data/bed_annot/Osativa_323_v7.0.gene_only.bed
+    At: 00.data/bed_annot/Athaliana_167_TAIR10.gene.bed
+protein_descriptor_len:
+    Zm: 5
+    Sb: 2
+    Pm: 0
+    Uf: 4
+    Os: 2
+    At: 2
+orthofinder_query_vs_ref:
+    Zm: 
+        Sb: 00.data/ortho_tsvs/
+        Pm: 00.data/ortho_tsvs/Zm-B73.prot__v__Pmiliaceum.prot.tsv
+        Uf: 00.data/ortho_tsvs/
+        Os: 00.data/ortho_tsvs/
+        At: 00.data/ortho_tsvs/Zm__v__Athal.tsv
+    Sb: 
+        Zm: 00.data/ortho_tsvs/Sbicolor.prot__v__Zm-B73.prot.tsv
+        Pm: 00.data/ortho_tsvs/
+        Uf: 00.data/ortho_tsvs/
+        Os: 00.data/ortho_tsvs/
+        At: 00.data/ortho_tsvs/Sbicolor__v__Athal.tsv
+    Pm:
+        Zm: 00.data/ortho_tsvs/Pmiliaceum.prot__v__Zm-B73.prot.tsv
+        Sb: 00.data/ortho_tsvs/ 
+        Uf: 00.data/ortho_tsvs/ 
+        Os: 00.data/ortho_tsvs/ 
+        At: 00.data/ortho_tsvs/Pmiliaceum__v__Athal.tsv
+    Uf:
+        Zm: 00.data/ortho_tsvs/Ufusca.prot__v__Zm-B73.prot.tsv
+        Pm: 00.data/ortho_tsvs/Ufusca.prot__v__Pmiliaceum.prot.tsv
+        At: 00.data/ortho_tsvs/Ufusca__v__Athal.tsv
+    Os:
+        Zm: 00.data/ortho_tsvs/Osativa.prot__v__Zm-B73.prot.tsv
+        Sb: 00.data/ortho_tsvs/ 
+        Pm: 00.data/ortho_tsvs/Osativa.prot__v__Pmiliaceum.prot.tsv
+        Uf: 00.data/ortho_tsvs/
+        At: 00.data/ortho_tsvs/Osativa__v__Athal.tsv

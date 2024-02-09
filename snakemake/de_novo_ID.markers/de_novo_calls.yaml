@@ -1,0 +1,37 @@
+species:
+  Zm:
+    meta: 00.data/meta/Zm.leaf_annot.V5.meta.frozen.txt
+    bed_tn5: 00.data/bed/Zm.filtered.sorted.bed
+    slot_id: reduce_resolution_annotation
+    markers: 00.data/markers/Zm.markers.leaf.visualize.txt
+    reference_bed: 00.data/reference_bed/Zm-B73-REFERENCE-NAM_Zm00001eb.1.genes.bed
+    slot_id: "final_annotation"
+    output_base: "Zm.de_novo"
+  Sb:
+    meta: 00.data/meta/Sb.leaf_annot.V5.meta.frozen.txt
+    slot_id: "reduce_resolution_annotation"
+    bed_tn5: 00.data/bed/Sb.filtered.sorted.bed
+    markers: 00.data/markers/Sb.orthos_from.Zm.markers.visualize.txt
+    reference_bed: 00.data/reference_bed/Sbicolorv5.1.gene.bed
+    output_base: "Sb.de_novo"
+  Pm:
+    meta: 00.data/meta/Pm.leaf_annotation.V1.meta.txt
+    slot_id: "reduce_resolution_annotation"
+    bed_tn5: 00.data/bed/panicum_millet.filter.mpq_10.rmdup.unique.sorted.bed
+    markers: 00.data/markers/Pm.markers_from_zm.markers.leaf.visulize.txt
+    reference_bed: 00.data/reference_bed/Pmiliaceum.genes.renamed.short.bed
+    output_base: "Pm.de_novo"
+  Uf:
+    meta: 00.data/meta/uf.leaf_annotation.V1.meta.txt
+    slot_id: "annotation_v1"
+    bed_tn5: 00.data/bed/urochlea_fusca.filter.mpq_10.rmdup.unique.sorted.bed
+    markers: 00.data/markers/Uf.leaf_all_combined_markers.visualzied.bed
+    reference_bed: 00.data/reference_bed/Ufusca_669_v1.1.gene_only.bed
+    output_base: "Uf.de_novo"
+  Os:
+    meta: 00.data/meta/os.leaf_annotation.V1.meta.txt
+    slot_id: "annotation_v1"
+    bed_tn5: 00.data/bed/Os.combined_reps.sorted.bed
+    markers: 00.data/markers/Os.leaf_markers.from_haidong.visualize.bed
+    reference_bed: 00.data/reference_bed/Osativa_323_v7.0.gene_only.bed
+    output_base: "Os.de_novo"

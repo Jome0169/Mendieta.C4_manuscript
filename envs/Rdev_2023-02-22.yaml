@@ -1,0 +1,36 @@
+name: R_final_install
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - bedtools
+  - r-askpass
+  - r-base
+  - r-class
+  - r-classint
+  - r-cpp11
+  - r-credentials
+  - r-curl
+  - r-dbi
+  - r-e1071
+  - r-gert
+  - r-jsonlite
+  - r-kernsmooth
+  - r-lattice
+  - r-magrittr
+  - r-mass
+  - r-openssl
+  - r-proxy
+  - r-raster
+  - r-rcpp
+  - r-rstudioapi
+  - r-s2
+  - r-sf
+  - r-sp
+  - r-sys
+  - r-terra
+  - r-units
+  - r-wk
+  - r-xml
+  - r-zip

@@ -1,0 +1,14 @@
+name: python3_dev
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - bedtools
+  - macs2
+  - numpy
+  - pandas
+  - pybedtools
+  - ucsc-bedgraphtobigwig
+  - ucsc-wigtobigwig
+prefix: /home/jpm73279/.conda/envs/python3_dev

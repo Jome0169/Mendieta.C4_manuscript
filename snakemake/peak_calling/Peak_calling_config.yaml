@@ -1,0 +1,102 @@
+file_lists: species_cell_types.tsv
+motifs: 00.data/conserved_consensus_motifs_Fig2B.meme
+motifs_all: 00.data/JASPAR2022_CORE_plants_non-redundant_pfms_meme.txt
+motifs_silencers: 00.data/ipt_combine_PRE_predict.meme
+motifs_discovered: 00.data/De_novo.motifs.meme
+species: 
+  zm:
+    fasta: 00.data/fa/Zm-B73-REFERENCE-NAM-5.0_MtPtAdd_Rsf.fa
+    fasta_fai: 00.data/fa/Zm-B73-REFERENCE-NAM-5.0_MtPtAdd_Rsf.fa.fai
+    fdr_val: .005
+    column_val: reduce_resolution_annotation
+    base_name: "Zm.v5_annot_final"
+    bed_exon_anno: 00.data/bed/genomic_features/Zm.all_CDS.bed
+    replicate_col: sampleID
+    gsize: 1.6e9
+    pval_cts_calls: .03
+    CNS_regions: 00.data/anno_data/Zm-B73.CNS_ID_regions.conserved_all_species.bed
+    gff3: 00.data/anno_data/Zm-B73-REFERENCE-NAM-5.0_Zm00001eb.1.no_chrom.gff3
+    gene_bed: 00.data/anno_data/Zm-B73-REFERENCE-NAM_Zm00001eb.1.genes.bed
+    bed_genomic_features:
+      exons: 00.data/bed/genomic_features/Zm.exons.bed
+      intergenic: 00.data/bed/genomic_features/Zm.intergenic_space.bed
+      introns: 00.data/bed/genomic_features/Zm.introns.bed
+      promoters: 00.data/bed/genomic_features/Zm.promoters.bed
+      tss: 00.data/bed/genomic_features/Zm.TSS.bed
+  sb:
+    fasta: 00.data/fa/Sorghum_bicolor_var_BTx623.mainGenome.MtPt.fasta
+    fasta_fai: 00.data/fa/Sorghum_bicolor_var_BTx623.mainGenome.MtPt.fasta.fai
+    fdr_val: .001
+    column_val: reduce_resolution_annotation
+    base_name: "Sb.v5_annot_final"
+    bed_exon_anno: 00.data/anno_data/Sb.exons.bed
+    replicate_col: sampleID
+    gsize: 1.8e8 
+    pval_cts_calls: .0001
+    CNS_regions: 00.data/anno_data/Sbicolor.CNS_ID_regions.conserved_all_species.bed
+    gff3: 00.data/anno_data/Sbicolorv5.1.gene.gff3
+    gene_bed: 00.data/anno_data/Sbicolorv5.1.gene.bed
+    bed_genomic_features:
+      exons: 00.data/bed/genomic_features/Sb.all_CDS.bed
+      intergenic: 00.data/bed/genomic_features/Sb.intergenic_space.bed
+      introns: 00.data/bed/genomic_features/Sb.introns.bed
+      promoters: 00.data/bed/genomic_features/Sb.promoters.bed
+      tss: 00.data/bed/genomic_features/Sb.TSS.bed
+  uf:
+    fasta: 00.data/fa/Ufusca_669_v1.0.fa
+    fasta_fai: 00.data/fa/Ufusca_669_v1.0.fa.fai
+    fdr_val: .05
+    column_val: annotation_v1 
+    base_name: "Uf.annot"
+    bed_exon_anno: 00.data/bed/genomic_features/Uf.all_CDS.bed
+    replicate_col: sampleID
+    gsize: 4.17e7
+    pval_cts_calls: .0002
+    CNS_regions: 00.data/anno_data/Ufusca.CNS_ID_regions.conserved_all_species.bed
+    gff3: 00.data/anno_data/Ufusca_669_v1.1.gene.gff3
+    gene_bed: 00.data/anno_data/Ufusca_669_v1.1.gene_only.simplified.bed
+    bed_genomic_features:
+      exons: 00.data/bed/genomic_features/Uf.exons.bed
+      intergenic: 00.data/bed/genomic_features/Uf.intergenic_space.bed
+      introns: 00.data/bed/genomic_features/Uf.introns.bed
+      promoters: 00.data/bed/genomic_features/Uf.promoters.bed
+      tss: 00.data/bed/genomic_features/Uf.TSS.bed
+  pm:
+    fdr_val: .01
+    fdr_val: .001
+    column_val: reduce_resolution_annotation
+    base_name: "Pm.annot"
+    bed_exon_anno: 00.data/bed/genomic_features/Pm.exons.bed
+    replicate_col: sampleID
+    gsize: 2.3e8
+    pval_cts_calls: .003
+    CNS_regions: 00.data/anno_data/Pmiliaceum.CNS_ID_regions.conserved_all_species.bed
+    fasta: 00.data/fa/Pmiliaceum.chromosomes.Pt.fa
+    fasta_fai: 00.data/fa/Pmiliaceum.chromosomes.Pt.fa.fai
+    gff3: 00.data/anno_data/Pmiliaceum.genes.gff
+    gene_bed: 00.data/anno_data/Pmiliaceum.genes.renamed.short.bed
+    bed_genomic_features:
+      exons: 00.data/bed/genomic_features/Pm.exons.bed
+      intergenic: 00.data/bed/genomic_features/Pm.intergenic_space.bed
+      introns: 00.data/bed/genomic_features/Pm.introns.bed
+      promoters: 00.data/bed/genomic_features/Pm.promoters.bed
+      tss: 00.data/bed/genomic_features/Pm.TSS.bed
+  os:
+    fasta: 00.data/fa/Osativa323v7.organelle.fa
+    fasta_fai: 00.data/fa/Osativa323v7.organelle.fa.fai
+    fdr_val: .001
+    column_val: annotation_v1
+    base_name: "Os.annot"
+    bed_exon_anno: 00.data/bed/genomic_features/Os.all_CDS.bed
+    replicate_col: sampleID
+    gsize: 3e8
+    pval_cts_calls: .0001
+    CNS_regions: 00.data/anno_data/Osativa.CNS_ID_regions.conserved_all_species.bed
+    gff3: 00.data/anno_data/Osativa_323_v7.0.gene_only.gff3
+    gene_bed: 00.data/anno_data/Osativa_323_v7.0.gene_only.bed
+    bed_genomic_features:
+      exons: 00.data/bed/genomic_features/Os.exons.bed
+      intergenic: 00.data/bed/genomic_features/Os.intergenic_space.bed
+      introns: 00.data/bed/genomic_features/Os.introns.bed
+      promoters: 00.data/bed/genomic_features/Os.promoters.bed
+      tss: 00.data/bed/genomic_features/Os.TSS.bed

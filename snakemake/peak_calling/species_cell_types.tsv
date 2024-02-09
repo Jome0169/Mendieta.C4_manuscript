@@ -1,0 +1,6 @@
+species bed fai meta_data c4_genes 
+zm 00.data/bed/Zm.filtered.sorted.bed 00.data/fai/Zm-B73-REFERENCE-NAM-5.0_MtPtAdd_Rsf.fa.fai 00.data/meta/Zm.leaf_annot.V5.meta.frozen.txt 00.data/C4_genes/Zm.c4_markers.bed
+sb 00.data/bed/Sb.filtered.sorted.bed 00.data/fai/Sorghum_bicolor_var_BTx623.mainGenome.MtPt.fasta.fai 00.data/meta/Sb.leaf_annot.V5.meta.frozen.txt 00.data/C4_genes/Sb.c4_markers.bed
+uf 00.data/bed/urochlea_fusca.filter.mpq_10.rmdup.unique.sorted.bed 00.data/fai/Ufusca_669_v1.0.Pt.fa.fai 00.data/meta/uf.leaf_annotation.V1.meta.txt 00.data/C4_genes/Uf.c4_markers.bed
+pm 00.data/bed/panicum_millet.filter.mpq_10.rmdup.unique.sorted.bed 00.data/fai/Pmiliaceum.chromosomes.Pt.fa.fai 00.data/meta/Pm.leaf_annotation.V1.meta.txt 00.data/C4_genes/Pm.c4_markers.bed
+os 00.data/bed/Os.combined_reps.sorted.bed 00.data/fai/Osativa323v7.organelle.fa.fai 00.data/meta/os.leaf_annotation.V1.meta.txt 00.data/C4_genes/Os.c4_markers.bed

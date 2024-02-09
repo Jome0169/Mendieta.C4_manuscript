@@ -1,0 +1,13 @@
+query reference reference_markers
+Sb Zm C4_markers.txt
+Pm Zm C4_markers.txt
+Zm Pm Pm.zou_et_al_markers.bed
+Uf Zm C4_markers.txt
+Os Pm Pm.zou_et_al_markers.bed
+Os Zm C4_markers.txt
+Uf Pm Pm.zou_et_al_markers.bed
+Zm At Athal.all_TFs.marker.bed
+Sb At Athal.all_TFs.marker.bed
+Pm At Athal.all_TFs.marker.bed
+Uf At Athal.all_TFs.marker.bed
+Os At Athal.all_TFs.marker.bed

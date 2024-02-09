@@ -1,0 +1,169 @@
+import pandas as pd
+import glob
+import os
+from itertools import product
+
+
+##### load config and sample sheets #####
+configfile: "saturation_config.cell.yaml"
+reference = config["reference_fa"]
+
+def xfrange(start, stop, step):
+    i = 0
+    while start + i * step < stop:
+        yield round(start + i * step, 3)
+        i += 1
+# rallel
+saturation_prop = xfrange(.01,1.01,.05)
+additional_values = [.005, .0075, .015, .02, .025, .03, .04,.05]
+
+gen_list = additional_values + list(saturation_prop) + [1]
+
+
+
+print(gen_list)
+rule all:
+    input:
+        expand("02.acc_metrics/{base_name}.gene_body_acc.{sub_samp}.base.counts.txt",
+                base_name = config["bed_base"],
+                sub_samp = gen_list),
+        expand("03.subsampled_peak_calls/{base_name}.prop_sample_{sub_samp}.500bp_peaks.bed",
+                base_name = config["bed_base"],
+                sub_samp = gen_list)
+        #expand("04.ATAC_bound_unbound/{base_name}.sub.{sub_sample}_dir",
+        #        base_name = config["bed_base"],
+        #        sub_sample = gen_list)
+
+
+rule subsample_cells:
+    input:
+        bed_sampe = config["sample_bed"],
+        meta = config['meta']
+    params:
+        sub_samp = "{sub_samp}",
+        bed_base = "01.subsampled/bed/{base_name}.prop_sampled_{sub_samp}"
+    output:
+        bed_output = "01.subsampled/bed/{base_name}.prop_sampled_{sub_samp}.bed",
+        meta_output = "01.subsampled/bed/{base_name}.prop_sampled_{sub_samp}.subsampled_meta.txt"
+    message: "Subsetting the Bed file"
+    conda:
+        "envs/pydev_2021-07-06.yaml"
+    threads: 15
+    shell:""" 
+    python scripts/sub_sample_cells.py -meta {input.meta} -prop {params.sub_samp} -bed {input.bed_sampe} -o {params.bed_base}
+    """
+
+rule sort_bed_files:
+    input:
+        "01.subsampled/bed/{base_name}.prop_sampled_{sub_samp}.bed"
+    output:
+        "01.subsampled/{base_name}.prop_sampled_{sub_samp}.sorted.bed"
+    threads: 5
+    shell:"""
+    sort -T . --parallel 5  -k1,1 -k2,2n {input} > {output}
+    """
+ 
+rule calculate_gene_body_accessability_counts:
+    input:
+        tn5_bed_file = "01.subsampled/{base_name}.prop_sampled_{sub_samp}.sorted.bed",
+        annot_bed = config["annotation_bed"]
+    params:
+        base = "02.acc_metrics/{base_name}.gene_body_acc.{sub_samp}.base"
+    output:
+        base = "02.acc_metrics/{base_name}.gene_body_acc.{sub_samp}.base.counts.txt"
+    message:"""Generating Gene Body Accessability Non-Normalized"""
+    threads:
+        10
+    conda:
+        "envs/pydev_2021-07-06.yaml"
+    shell:"""
+    python scripts/gene_body_acc.py -anno {input.annot_bed} -tn5 {input.tn5_bed_file} -base {params.base} -p {threads} > {output}
+    """
+
+rule call_peaks:
+    input:
+        input_meta_file = rules.subsample_cells.output.meta_output,
+        input_bed_fle = rules.subsample_cells.output.bed_output
+    params:
+        fai_file = config["fai_file"],
+        base_name = "{base_name}.prop_sample_{sub_samp}",
+        output_dir = "03.subsampled_peak_calls"
+    output:
+        "03.subsampled_peak_calls/{base_name}.prop_sample_{sub_samp}.500bp_peaks.bed"
+    message:"""Running Peak Calls"""
+    conda:
+        "envs/2022-08-24_pydev.yaml"
+    threads:
+        10
+    shell:""" 
+    python scripts/call_scACRs.py -bed {input.input_bed_fle} -meta {input.input_meta_file} -col V3_annotation_n -fai {params.fai_file} -bw yes -base {params.base_name} -outdir {params.output_dir}"""
+
+
+
+#rule call_peaks:
+#    input:
+#        #lib = rules.subsample_bed.output
+#        lib = rules.subsample_cells.output
+#    params:
+#        macs2_base_name = "01.subsampled/peaks/{base_name}_subsampled.{sub_samp}",
+#        macs2_df_ot = "01.subsampled/peaks/{base_name}_subsampled.{sub_samp}_peaks.narrowPeak",
+#        gns = config['genome_size']
+#    conda:
+#        "envs/macs2.yml"
+#    output:
+#        "01.subsampled/peaks/{base_name}_subsampled.{sub_samp}_peaks_narrow.bed"
+#    shell:"""
+#        macs2 callpeak -t {input.lib} --extsize 100 --nomodel --shift -50 \
+#        --keep-dup all -f BED -g 1.6e9 -q .01 -n {params.macs2_base_name}
+#
+#        cat {params.macs2_df_ot} > {output}
+#        """
+#
+#
+#rule filter_peaks:
+#    input:
+#        peaks = rules.call_peaks.output
+#    output:
+#        "01.subsampled/peaks/{base_name}_subsampled.{sub_samp}_peaks_narrow.no_org.bed"
+#    shell:
+#        """
+#        awk '$1 != "Pt" {{print}}' {input.peaks} > {output}
+#        """
+
+
+
+
+#rule BinDetect_compare_conditions:
+#    input:
+#        motif_dir = config["motif_dir"],
+#        ref_genome = config["reference_fa"],
+#        tissue_1_scored = lambda wildcards: expand("03.scored_bw/{tissue_1}_scored_footprints.bw",
+#            tissue_1 = wildcards.tissue_1),
+#        tissue_1_bed = lambda wildcards: '00.data/bed_files/' + samples.loc[samples["tissue"] == wildcards.tissue_1]["peak"],
+#        tissue_2_scored = lambda wildcards: expand("03.scored_bw/{tissue_2}_scored_footprints.bw",
+#            tissue_2 = wildcards.tissue_2),
+#        tissue_2_bed = lambda wildcards: '00.data/bed_files/' + samples.loc[samples["tissue"] == wildcards.tissue_2]["peak"]
+#    params:
+#        merged_bed = "04.dff_binding_tissues/{tissue_1}_vs_{tissue_2}.merged.sorted.bed",
+#        cond = "{tissue_1} {tissue_2}"
+#    output:
+#        dir_name = directory("04.dff_binding_tissues/{tissue_1}_vs_{tissue_2}")
+#    message:"""Running Differential Conditions"""
+#    threads:
+#        10
+#    conda:
+#        "envs/tobias.yml"
+#    shell:"""
+#    cat {input.tissue_1_bed} {input.tissue_2_bed} | bedtools sort -i - > {params.merged_bed}
+#
+#    TOBIAS BINDetect \
+#    --motifs {input.motif_dir} \
+#    --signals {input.tissue_1_scored} {input.tissue_2_scored} \
+#    --genome {input.ref_genome} \
+#    --peaks {params.merged_bed} \
+#    --outdir {output.dir_name} \
+#    --cond_names {params.cond} \
+#    --cores {threads}
+#    """
+
+

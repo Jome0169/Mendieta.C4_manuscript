@@ -1,0 +1,11 @@
+sciATAC_samples: multi_species.sciATAC.samples.tsv
+species:
+    zea_mays: 00.data/reference/Zm-B73-REFERENCE-NAM-5.0_MtPtAdd_Rsf.fa
+    sorghum_bicolor: 00.data/reference/Sorghum_bicolor_var_BTx623.mainGenome.MtPt.fasta
+    urochlea_fusca: 00.data/reference/Ufusca_669_v1.0.Pt.fa
+    panicum_millet: 00.data/reference/Pmiliaceum.chromosomes.Pt.fa
+mapping_quality: 
+    zea_mays: 10
+    sorghum_bicolor: 10
+    urochlea_fusca: 10
+    panicum_millet: 30
